@@ -102,7 +102,8 @@ a élargi le périmètre. État mesuré (fichiers générés puis passés à `Lo
 Toutes les lignes ✅ ci-dessus sont **vérifiées empiriquement** sur des fichiers
 écrits par Python xarray (`NETCDF3_CLASSIC`). Les lignes 🔄 passent par
 `xarray.OpenNetCDFFile`, qui délègue à un convertisseur externe détecté dans le
-PATH ; testé de bout en bout sur un vrai HDF5 (superblock v2).
+PATH ; **validées de bout en bout** avec `nccopy` (netCDF 4.9.3) sur un vrai
+NetCDF-4/HDF5 (superblock v2) : `LoadNetCDF` bâtit la collection attendue.
 
 **Conclusion honnête :** `LoadNetCDF` lit nativement le **CDF-1 classique** (avec
 attributs, décodage CF packing + temps, dimension illimitée). Les formats binaires

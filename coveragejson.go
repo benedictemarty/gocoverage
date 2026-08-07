@@ -2,6 +2,7 @@ package gocoverage
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -9,6 +10,11 @@ import (
 
 	"github.com/bmarty/xarray"
 )
+
+// ErrSelectLevel signale qu'un export CoverageJSON est impossible tant qu'un
+// niveau vertical unique n'a pas été sélectionné (paramètre EDR z=…). C'est une
+// erreur corrigible par le client : le serveur la traduit en HTTP 400.
+var ErrSelectLevel = errors.New("sélection d'un niveau vertical requise")
 
 // Structures CoverageJSON reproduisant fidèlement gen_covjson de pygeoapi
 // (XarrayProvider) : domaine Grid (axes réguliers start/stop/num) ou PointSeries
@@ -99,7 +105,7 @@ func (c *Collection) CoverageJSON(ds *xarray.Dataset[float64]) ([]byte, error) {
 	// niveaux n'est pas représentable. Sélectionner un niveau (paramètre z EDR).
 	if c.ZDim != "" {
 		if n, ok := ds.Dims()[c.ZDim]; ok && n > 1 {
-			return nil, fmt.Errorf("axe vertical %q à %d niveaux non représentable en CoverageJSON : sélectionnez un niveau (z=…)", c.ZDim, n)
+			return nil, fmt.Errorf("axe vertical %q à %d niveaux non représentable en CoverageJSON : sélectionnez un niveau (z=…): %w", c.ZDim, n, ErrSelectLevel)
 		}
 	}
 

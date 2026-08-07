@@ -5,6 +5,22 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.7.0] - 2026-08-07
+
+### Sprint « parité pygeoapi #6 » — format de sortie natif (netCDF)
+
+- **Négociation de format via `f`** — pendant de `query(format_=…)` de pygeoapi.
+  `f=json`/`covjson` (défaut) → CoverageJSON ; `f=netcdf`/`nc` → export **netCDF
+  natif** du sous-cube (via `xarray.WriteNetCDF`), `Content-Type:
+  application/x-netcdf` + `Content-Disposition`.
+- `f=zarr` renvoie une erreur explicite (pas d'écriture Zarr en xarray-go) ; un
+  format inconnu → 400.
+- Un axe vertical multi-niveaux à l'export CoverageJSON renvoie désormais **400**
+  (erreur client-corrigible `ErrSelectLevel`, « sélectionnez un niveau »), au lieu
+  de 500.
+- Tests : `TestCoverageFormatNetCDF` (round-trip requête → netCDF → relecture),
+  `TestCoverageFormatInconnu`, `TestCoverageFormatZarrIndisponible`.
+
 ## [0.6.0] - 2026-08-07
 
 ### Sprint « parité pygeoapi #5 » — axe vertical z (EDR)

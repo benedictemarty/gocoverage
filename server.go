@@ -1,7 +1,9 @@
 package gocoverage
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -134,7 +136,7 @@ func (s *Server) coverage(w http.ResponseWriter, r *http.Request, c *Collection)
 		writeErr(w, 400, err.Error())
 		return
 	}
-	s.writeCoverage(w, c, ds)
+	s.writeCoverage(w, r, c, ds)
 }
 
 // position : requête EDR position → CoverageJSON (PointSeries).
@@ -165,7 +167,7 @@ func (s *Server) position(w http.ResponseWriter, r *http.Request, c *Collection)
 		writeErr(w, 400, err.Error())
 		return
 	}
-	s.writeCoverage(w, c, ds)
+	s.writeCoverage(w, r, c, ds)
 }
 
 // cube : requête EDR cube → CoverageJSON.
@@ -196,7 +198,7 @@ func (s *Server) cube(w http.ResponseWriter, r *http.Request, c *Collection) {
 		writeErr(w, 400, err.Error())
 		return
 	}
-	s.writeCoverage(w, c, ds)
+	s.writeCoverage(w, r, c, ds)
 }
 
 // parseZ analyse le paramètre EDR z (un niveau vertical unique). Vide → nil.
@@ -212,16 +214,40 @@ func parseZ(s string) (*float64, error) {
 	return &v, nil
 }
 
-// writeCoverage sérialise un Dataset en CoverageJSON.
-func (s *Server) writeCoverage(w http.ResponseWriter, c *Collection, ds *xarray.Dataset[float64]) {
-	b, err := c.CoverageJSON(ds)
-	if err != nil {
-		writeErr(w, 500, err.Error())
-		return
+// writeCoverage sérialise un Dataset dans le format demandé par le paramètre
+// `f` — pendant de query(format_=…) de pygeoapi. Défaut : CoverageJSON.
+// Formats : json/covjson (CoverageJSON), netcdf/nc (natif netCDF).
+func (s *Server) writeCoverage(w http.ResponseWriter, r *http.Request, c *Collection, ds *xarray.Dataset[float64]) {
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get("f"))) {
+	case "", "json", "covjson", "coveragejson":
+		b, err := c.CoverageJSON(ds)
+		if err != nil {
+			// Erreur corrigible par le client (niveau vertical à sélectionner) → 400.
+			code := 500
+			if errors.Is(err, ErrSelectLevel) {
+				code = 400
+			}
+			writeErr(w, code, err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/prs.coverage+json")
+		w.WriteHeader(200)
+		_, _ = w.Write(b)
+	case "netcdf", "nc":
+		var buf bytes.Buffer
+		if err := ds.WriteNetCDF(&buf); err != nil {
+			writeErr(w, 500, "export netCDF: "+err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-netcdf")
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+c.ID+".nc\"")
+		w.WriteHeader(200)
+		_, _ = w.Write(buf.Bytes())
+	case "zarr":
+		writeErr(w, 400, "format zarr non disponible en sortie (xarray-go n'a pas d'écriture Zarr)")
+	default:
+		writeErr(w, 400, "format inconnu: "+r.URL.Query().Get("f")+" (json|netcdf)")
 	}
-	w.Header().Set("Content-Type", "application/prs.coverage+json")
-	w.WriteHeader(200)
-	_, _ = w.Write(b)
 }
 
 // parseDatetimeParam analyse le paramètre datetime en s'appuyant sur l'étendue

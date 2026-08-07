@@ -56,6 +56,10 @@ intervalles `a/b`, bornes ouvertes `..`) ou des valeurs numériques (epoch). L'a
 temporel du CoverageJSON ressort en ISO 8601 quand les temps sont des secondes
 epoch.
 
+**Format de sortie** (`f=`) : `json` (CoverageJSON, défaut) ou `netcdf`/`nc`
+(export netCDF natif via `xarray.WriteNetCDF`). Ex.
+`.../coverage?bbox=1,42,4,45&f=netcdf`. `zarr` n'est pas disponible en sortie.
+
 ### Exemples
 
 ```bash
@@ -117,10 +121,14 @@ formats binaires via un convertisseur.
 
 ## Autres limites connues
 
-- Axe temporel numérique (pas encore de dates ISO 8601), CRS84 uniquement.
+- CRS84 uniquement.
 - Une variable sans `units` est conservée (unité vide) — divergence assumée avec
   pygeoapi qui l'ignore.
-- Pas encore de formats natifs en sortie (zarr/netcdf), ni d'axe vertical `z`.
+- Sortie native **netCDF** (`f=netcdf`) disponible ; **zarr** en sortie non
+  disponible (pas d'écriture Zarr en xarray-go).
+- **Axe vertical `z`** : pris en charge en **sélection** EDR (`z=…`, niveau unique
+  au plus proche) ; un axe à plusieurs niveaux n'est pas représentable en
+  CoverageJSON (sélectionnez un niveau → sinon HTTP 400).
 - Sous-ensemble d'OGC API (pas d'OpenAPI/conformance/HTML).
 
 Voir [`CHANGELOG.md`](CHANGELOG.md) et [`docs/parite-pygeoapi.md`](docs/parite-pygeoapi.md).

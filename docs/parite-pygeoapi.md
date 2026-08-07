@@ -15,11 +15,11 @@ gocoverage. La référence est le code source réel de pygeoapi (branche `master
 | `__init__` (open_dataset/zarr)   | `LoadNetCDF`, `LoadZarr`            | ✅ CDF-1 + décodage CF (packing, temps) ; pas de HDF5/CDF-2 |
 | `get_fields`                     | `Collection.Fields`                 | ✅ |
 | `_get_coverage_properties`       | `Collection.Properties`             | ✅ |
-| `query`                          | `Collection.Query`                  | ✅ |
+| `query` (+ `format_`)            | `Collection.Query` + négociation `f` | ✅ (json + netcdf) |
 | `gen_covjson`                    | `Collection.CoverageJSON`           | ✅ |
 | `_get_parameter_metadata`        | intégré à `CoverageJSON`/`Fields`   | ✅ |
 | `get_time_resolution` / duration | `Properties` (restime partiel)      | ⚠️ partiel |
-| formats natifs (zarr/netcdf out) | —                                   | ❌ à venir |
+| formats natifs (`format_=netcdf`) | négociation `f=netcdf`             | ✅ netCDF ; ❌ zarr (pas d'écriture Zarr en xarray-go) |
 | CRS non-CRS84 (`_parse_storage_crs`) | —                               | ❌ à venir |
 
 | pygeoapi (`XarrayEDRProvider`)   | gocoverage                          | État |

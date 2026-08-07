@@ -54,10 +54,11 @@ func TestPositionWithZ(t *testing.T) {
 
 func TestCoverageZMultiLevelRejected(t *testing.T) {
 	srv := NewServer(zProvider(t))
-	// coverage sans sélection de z -> deux niveaux -> non représentable -> 500
+	// coverage sans sélection de z -> deux niveaux -> non représentable.
+	// Erreur corrigible par le client (sélectionner un niveau) -> 400.
 	rec := doGET(t, srv, "/collections/z/coverage")
-	if rec.Code != 500 {
-		t.Errorf("code=%d, attendu 500 (axe vertical multi-niveaux)", rec.Code)
+	if rec.Code != 400 {
+		t.Errorf("code=%d, attendu 400 (axe vertical multi-niveaux, niveau à sélectionner)", rec.Code)
 	}
 }
 

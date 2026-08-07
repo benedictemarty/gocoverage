@@ -18,7 +18,7 @@ gocoverage. La référence est le code source réel de pygeoapi (branche `master
 | `query` (+ `format_`)            | `Collection.Query` + négociation `f` | ✅ (json + netcdf + zarr) |
 | `gen_covjson`                    | `Collection.CoverageJSON`           | ✅ |
 | `_get_parameter_metadata`        | intégré à `CoverageJSON`/`Fields`   | ✅ |
-| `get_time_resolution` / duration | `Properties` (restime partiel)      | ⚠️ partiel |
+| `get_time_resolution` / `get_time_coverage_duration` | `Properties` (`restime`/`time_duration`, ISO 8601) | ✅ (temps epoch) |
 | formats natifs (`format_=netcdf`/`zarr`) | négociation `f=netcdf`/`zarr` | ✅ netCDF + Zarr (ZIP) |
 | CRS de stockage (`_parse_storage_crs`, `crs_type`/`bbox_crs`) | `Collection.CRS` + `detectCRS` | ✅ **description** (EPSG explicite ou détecté) ; ❌ **reprojection** (comme pygeoapi) |
 
@@ -68,6 +68,5 @@ gocoverage. La référence est le code source réel de pygeoapi (branche `master
 
 ## Prochains incréments possibles
 
-- Durées/résolutions temporelles complètes (ISO 8601 durations).
 - Reprojection effective (nécessiterait un équivalent pyproj en Go).
 - Détection CRS élargie (mapping `grid_mapping_name` → EPSG sans code explicite).

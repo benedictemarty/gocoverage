@@ -96,6 +96,45 @@ func TestParseSubsets(t *testing.T) {
 	}
 }
 
+func TestISO8601Duration(t *testing.T) {
+	cases := map[float64]string{
+		0:      "PT0S",
+		86400:  "P1D",
+		21600:  "PT6H",
+		90:     "PT1M30S",
+		93780:  "P1DT2H3M", // 1j 2h 3m
+		3600:   "PT1H",
+		1:      "PT1S",
+		259200: "P3D",
+	}
+	for sec, want := range cases {
+		if got := iso8601Duration(sec); got != want {
+			t.Errorf("iso8601Duration(%v) = %q, attendu %q", sec, got, want)
+		}
+	}
+}
+
+func TestPropertiesTimeResolution(t *testing.T) {
+	// Temps epoch : 2020-01-01, +6h, +12h -> résolution PT6H, durée PT12H.
+	coords := map[string][]float64{
+		"time":      {1577836800, 1577858400, 1577880000},
+		"latitude":  {45, 44},
+		"longitude": {0, 1},
+	}
+	da, _ := xarray.NewDataArray([]string{"time", "latitude", "longitude"}, []int{3, 2, 2},
+		make([]float64, 12), coords, "t2m")
+	da.Variable().SetAttr("units", "K")
+	ds, _ := xarray.NewDataset(map[string]*xarray.DataArray[float64]{"t2m": da})
+	c := &Collection{ID: "m", XDim: "longitude", YDim: "latitude", TDim: "time", Data: ds}
+	p := c.Properties()
+	if p.TimeResolution != "PT6H" {
+		t.Errorf("restime = %q, attendu PT6H", p.TimeResolution)
+	}
+	if p.TimeDuration != "PT12H" {
+		t.Errorf("time_duration = %q, attendu PT12H", p.TimeDuration)
+	}
+}
+
 func TestParseDatetimeISO(t *testing.T) {
 	ext := [2]float64{0, 4.1e9}
 	// Intervalle ISO 8601 -> epoch.

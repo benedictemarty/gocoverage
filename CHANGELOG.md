@@ -5,6 +5,17 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.10.0] - 2026-08-07
+
+### Sprint « parité pygeoapi #9 » — résolution et durée temporelles (ISO 8601)
+
+- **`Properties()`** renseigne désormais `restime` (résolution) et
+  `time_duration` (durée) en **ISO 8601** — pendants de `get_time_resolution` et
+  `get_time_coverage_duration` de pygeoapi — quand l'axe temporel est en secondes
+  epoch. Ex. pas de 6 h → `restime: "PT6H"`, span de 12 h → `time_duration: "PT12H"`.
+- Helper `iso8601Duration(secondes)` (jours/heures/minutes/secondes).
+- Tests : `TestISO8601Duration`, `TestPropertiesTimeResolution`.
+
 ## [0.9.0] - 2026-08-07
 
 ### Sprint « parité pygeoapi #8 » — description du CRS (sans reprojection)

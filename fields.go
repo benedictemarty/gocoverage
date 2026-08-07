@@ -1,5 +1,10 @@
 package gocoverage
 
+import (
+	"fmt"
+	"strings"
+)
+
 // Field décrit un paramètre (variable de données) exposé par une collection,
 // à la manière de get_fields dans pygeoapi : type, libellé et unité.
 type Field struct {
@@ -57,7 +62,12 @@ type CoverageProperties struct {
 	TimeAxis   string      `json:"time_axis_label,omitempty"`
 	TimeRange  *[2]float64 `json:"time_range,omitempty"`
 	TimeSteps  int         `json:"time,omitempty"`
-	Axes       []string    `json:"axes"`
+	// Résolution et durée temporelles en ISO 8601 (pendants de
+	// get_time_resolution / get_time_coverage_duration de pygeoapi), renseignées
+	// quand l'axe temporel est en secondes epoch.
+	TimeResolution string   `json:"restime,omitempty"`
+	TimeDuration   string   `json:"time_duration,omitempty"`
+	Axes           []string `json:"axes"`
 }
 
 // Properties calcule les propriétés de couverture de la collection.
@@ -86,6 +96,13 @@ func (c *Collection) Properties() CoverageProperties {
 		p.TimeRange = &ext
 		p.TimeSteps = len(ts)
 		p.Axes = append(p.Axes, c.TDim)
+		// Résolution/durée en ISO 8601 uniquement si le temps est en secondes epoch.
+		if allEpochSeconds(ts) {
+			if len(ts) > 1 {
+				p.TimeResolution = iso8601Duration(ts[1] - ts[0])
+			}
+			p.TimeDuration = iso8601Duration(ts[len(ts)-1] - ts[0])
+		}
 	}
 	return p
 }
@@ -95,4 +112,41 @@ func absf(x float64) float64 {
 		return -x
 	}
 	return x
+}
+
+// iso8601Duration formate un nombre de secondes en durée ISO 8601
+// (ex. 86400 → "P1D", 21600 → "PT6H", 90 → "PT1M30S"). 0 → "PT0S".
+func iso8601Duration(sec float64) string {
+	if sec < 0 {
+		sec = -sec
+	}
+	total := int64(sec + 0.5)
+	if total == 0 {
+		return "PT0S"
+	}
+	days := total / 86400
+	total %= 86400
+	h := total / 3600
+	total %= 3600
+	m := total / 60
+	s := total % 60
+
+	var b strings.Builder
+	b.WriteByte('P')
+	if days > 0 {
+		fmt.Fprintf(&b, "%dD", days)
+	}
+	if h > 0 || m > 0 || s > 0 {
+		b.WriteByte('T')
+		if h > 0 {
+			fmt.Fprintf(&b, "%dH", h)
+		}
+		if m > 0 {
+			fmt.Fprintf(&b, "%dM", m)
+		}
+		if s > 0 {
+			fmt.Fprintf(&b, "%dS", s)
+		}
+	}
+	return b.String()
 }

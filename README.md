@@ -135,4 +135,6 @@ formats binaires via un convertisseur.
   CoverageJSON (sélectionnez un niveau → sinon HTTP 400).
 - Sous-ensemble d'OGC API (pas d'OpenAPI/conformance/HTML).
 
-Voir [`CHANGELOG.md`](CHANGELOG.md) et [`docs/parite-pygeoapi.md`](docs/parite-pygeoapi.md).
+Voir [`CHANGELOG.md`](CHANGELOG.md), [`docs/parite-pygeoapi.md`](docs/parite-pygeoapi.md)
+(cartographie fonction par fonction) et [`docs/SYNTHESE.md`](docs/SYNTHESE.md)
+(document de clôture : parcours 0.1→0.10, parité, écarts assumés, validation).

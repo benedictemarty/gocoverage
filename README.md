@@ -80,33 +80,27 @@ curl "http://localhost:8080/collections/demo/position?coords=2,43&parameter-name
 ## Limitations I/O (frontière réelle, mesurée)
 
 L'**API et la sémantique** de xarray-go couvrent les besoins du provider pygeoapi
-(`sel` slice/nearest, `.values`, `.attrs`, coords, `min`/`max`). En revanche
-l'**ouverture de fichiers réels** est nettement plus étroite que ce que suggère
-« ouverture netCDF/Zarr ». Vérifié en générant des fichiers avec xarray Python
-(`format=…`) et en les passant à `LoadNetCDF` :
+(`sel` slice/nearest, `.values`, `.attrs`, coords, `min`/`max`). L'**ouverture de
+fichiers** reste plus étroite que xarray Python, mais le sprint « attributs CF »
+a élargi le périmètre. État mesuré (fichiers générés puis passés à `LoadNetCDF`) :
 
 | Fichier de test | Cas | Résultat `LoadNetCDF` |
 |---|---|---|
-| CDF-1, sans attributs | aller-retour xarray-go | ✅ chargé, valeurs correctes |
-| CDF-1 **+ attributs** (`units`, `long_name`) | fichier réel minimal | ❌ échec (`unexpected EOF`) |
+| CDF-1, sans attributs | aller-retour xarray-go | ✅ chargé |
+| CDF-1 **+ attributs** (`units`, `long_name`) | métadonnées CF | ✅ chargé, `units` exposé dans `Fields` |
+| CDF-1 **+ `scale_factor`/`add_offset`/`_FillValue`** | packing | ✅ **dépacké** (`DecodeCF`), fill → NaN |
+| CDF-1 **+ `time: "hours since…"`** | axe temporel CF | ✅ **décodé** en epoch (`DecodeTime`) |
+| CDF-1 **+ `time` illimitée** (`numrecs`≠0) | climato typique | ❌ **rejet propre** (erreur, plus de panic) |
+| **CDF-2** (64-bit offset) / **CDF-5** | gros fichiers | ❌ rejet propre (version) |
 | **NetCDF-4 / HDF5** | défaut de xarray/CDO | ❌ rejet propre (signature) |
-| **CDF-2** (64-bit offset) | gros fichiers | ❌ rejet propre (version 2) |
-| CDF-1 **+ `time` illimitée** + CF | climato typique | ❌ **panic** (borne d'index) |
-| CDF-1 **+ `scale_factor`/`add_offset`** (packing int16) | ERA5/MF | ❌ échec de parse |
 
-**Conclusion honnête :** `LoadNetCDF` ne lit fiablement que du **CDF-1 classique
-sans attributs** (typiquement produit par xarray-go lui-même). La quasi-totalité
-des jeux de données climato réels — NetCDF-4/HDF5, ou CDF-1 avec attributs CF,
-dimension `time` illimitée, encodage `units: "hours since…"`, packing
-`scale_factor`/`add_offset` — **ne se chargent pas** en l'état.
-
-> Deux défauts de robustesse identifiés : les fichiers *avec attributs* échouent
-> avec un message trompeur, et un fichier à *dimension illimitée* **fait paniquer**
-> le lecteur au lieu de renvoyer une erreur. À durcir côté `xarray/netcdf.go`.
-
-Pour l'écosystème complet (I/O CF, dask, HDF5), xarray-go n'est **pas** un
-substitut à xarray Python ; il l'est pour l'API et les opérations sur tableaux
-numériques.
+**Conclusion honnête :** `LoadNetCDF` lit désormais le **CDF-1 classique avec
+attributs et décodage CF minimal** (packing + temps). Restent hors périmètre les
+formats binaires **NetCDF-4/HDF5**, **CDF-2/5** et les **dimensions illimitées** —
+or la plupart des jeux climato réels sont en NetCDF-4/HDF5. Pour ces formats, et
+pour l'écosystème complet (dask, CF avancé), xarray-go n'est **pas** un substitut
+à xarray Python ; il l'est pour l'API, les opérations sur tableaux numériques et
+l'échange CDF-1 + CF de base.
 
 ## Autres limites connues
 

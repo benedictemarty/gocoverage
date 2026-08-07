@@ -5,6 +5,33 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.3.0] - 2026-08-07
+
+### Sprint « parité pygeoapi #2 » — décodage CF à l'ouverture netCDF
+
+S'appuie sur le sprint 60 de xarray-go (attributs netCDF + `DecodeCF`/`DecodeTime`).
+
+### Ajouté / Modifié
+- **`LoadNetCDF` décode désormais les conventions CF** (comme `decode_cf=True`
+  de pygeoapi) :
+  - *packing* : `scale_factor`/`add_offset` appliqués, `_FillValue`/
+    `missing_value` → NaN (via `xarray.DecodeCF`) ;
+  - *temps* : axe `time` en « `<unité> since <date>` » converti en secondes
+    depuis l'epoch (via `xarray.DecodeTime`), quand l'axe T est détecté ;
+  - les **attributs de variable** (`units`, `long_name`) sont maintenant lus
+    depuis le fichier et exposés par `Fields()` (`get_fields`).
+- Test d'intégration `TestLoadNetCDFCF` : écriture d'un netCDF CF → `LoadNetCDF`
+  → vérification du dépacking, du `_FillValue`→NaN et des `units`.
+
+### Corrigé (frontière I/O, cf. tableau README)
+- Les netCDF **avec attributs CF** se chargent désormais (auparavant :
+  `unexpected EOF`).
+- Une **dimension illimitée** (`numrecs`≠0) est refusée par une erreur explicite
+  (auparavant : panic).
+
+### Reste hors périmètre
+- NetCDF-4/HDF5, CDF-2/5, dimensions illimitées, dask, CF avancé.
+
 ## [0.2.0] - 2026-08-07
 
 ### Sprint « parité pygeoapi #1 » — cœur du provider xarray + ouverture fichiers

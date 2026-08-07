@@ -12,7 +12,7 @@ gocoverage. La référence est le code source réel de pygeoapi (branche `master
 
 | pygeoapi (`XarrayProvider`)      | gocoverage                          | État |
 |----------------------------------|-------------------------------------|------|
-| `__init__` (open_dataset/zarr)   | `LoadNetCDF`, `LoadZarr`            | ✅ (netCDF/Zarr) |
+| `__init__` (open_dataset/zarr)   | `LoadNetCDF`, `LoadZarr`            | ✅ CDF-1 + décodage CF (packing, temps) ; pas de HDF5/CDF-2 |
 | `get_fields`                     | `Collection.Fields`                 | ✅ |
 | `_get_coverage_properties`       | `Collection.Properties`             | ✅ |
 | `query`                          | `Collection.Query`                  | ✅ |
@@ -50,8 +50,10 @@ gocoverage. La référence est le code source réel de pygeoapi (branche `master
 1. **Variables sans `units`** : pygeoapi les ignore (`get_fields`). gocoverage
    les conserve avec une unité vide, pour rester exploitable avec des jeux de
    données xarray-go qui ne portent pas toujours cette métadonnée.
-2. **Temps numérique** : l'axe temporel est un `float64` (index / epoch), pas
-   encore une date ISO 8601. `datetime` accepte des bornes numériques et `..`.
+2. **Temps numérique** : l'axe temporel est un `float64` en **secondes depuis
+   l'epoch Unix** (décodé depuis les `units` CF « `<unité> since <date>` » à
+   l'ouverture, via `xarray.DecodeTime`). Le paramètre `datetime` attend donc
+   des bornes numériques (epoch) et `..`, pas encore des dates ISO 8601.
 3. **CRS** : CRS84 uniquement pour l'instant.
 
 ## Prochains incréments possibles

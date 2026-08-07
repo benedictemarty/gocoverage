@@ -151,25 +151,15 @@ func dsSelRange(ds *xarray.Dataset[float64], dim string, lo, hi float64) (*xarra
 	})
 }
 
-// dsSelNearest sélectionne au plus proche sur la dimension dim, en conservant
-// la dimension (taille 1) et sa coordonnée : on repère la coordonnée la plus
-// proche puis on applique SelRange (SelNearest supprimerait la dimension, ce qui
-// empêcherait la construction du CoverageJSON PointSeries).
+// dsSelNearest sélectionne au plus proche sur la dimension dim, en CONSERVANT
+// la dimension (taille 1) et sa coordonnée — indispensable pour construire un
+// CoverageJSON PointSeries. S'appuie sur xarray.SelNearestKeep, qui reproduit
+// sel(dim=[val], method="nearest") de xarray (SelNearest scalaire, lui,
+// supprimerait la dimension comme sel(dim=val)).
 func dsSelNearest(ds *xarray.Dataset[float64], dim string, val float64) (*xarray.Dataset[float64], error) {
-	coord, err := ds.Coord(dim)
-	if err != nil {
-		return nil, err
-	}
-	if len(coord) == 0 {
-		return nil, fmt.Errorf("coordonnée %q vide", dim)
-	}
-	nearest, best := coord[0], absf(coord[0]-val)
-	for _, c := range coord[1:] {
-		if d := absf(c - val); d < best {
-			nearest, best = c, d
-		}
-	}
-	return dsSelRange(ds, dim, nearest, nearest)
+	return dsMap(ds, dim, func(da *xarray.DataArray[float64]) (*xarray.DataArray[float64], error) {
+		return da.SelNearestKeep(dim, val)
+	})
 }
 
 // dsMap applique fn aux variables qui possèdent la dimension dim, laisse les

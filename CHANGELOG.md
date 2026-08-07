@@ -5,6 +5,21 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.4.0] - 2026-08-07
+
+### Sprint « parité pygeoapi #3 » — ouverture NetCDF-4/HDF5 par conversion
+
+S'appuie sur le sprint 61 de xarray-go (`OpenNetCDFFile`).
+
+- **`LoadNetCDF` ouvre désormais les fichiers NetCDF-4/HDF5 et CDF-2/5** en
+  déléguant à un convertisseur externe (`nccopy` ou `cdo`) qui les réécrit en
+  CDF-1, puis en appliquant la lecture + décodage CF habituels. Le CDF-1 reste lu
+  directement, sans outil externe.
+- Si aucun convertisseur n'est présent, un fichier binaire échoue par une erreur
+  explicite (jamais de panic). Pas de lecteur HDF5 en Go : dépendance à
+  `nccopy`/`cdo` assumée pour ces formats.
+- README : tableau « Limitations I/O » mis à jour (lignes 🔄 via convertisseur).
+
 ## [0.3.0] - 2026-08-07
 
 ### Sprint « parité pygeoapi #2 » — décodage CF à l'ouverture netCDF

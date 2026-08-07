@@ -2,7 +2,6 @@ package gocoverage
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/bmarty/xarray"
@@ -17,12 +16,9 @@ import (
 // (_FillValue/missing_value → NaN), et axe temporel (« <unité> since <date> »
 // → secondes depuis l'epoch).
 func LoadNetCDF(path, id, title, xDim, yDim, tDim string) (*Collection, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("ouverture %q: %w", path, err)
-	}
-	defer f.Close()
-	ds, err := xarray.ReadDatasetNetCDF[float64](f)
+	// OpenNetCDFFile lit directement le CDF-1 ; pour NetCDF-4/HDF5 ou CDF-2/5, il
+	// délègue à un convertisseur externe détecté dans le PATH (nccopy/cdo).
+	ds, err := xarray.OpenNetCDFFile(path, nil)
 	if err != nil {
 		return nil, fmt.Errorf("lecture netCDF %q: %w", path, err)
 	}

@@ -23,6 +23,7 @@ type Collection struct {
 	YDim  string // dimension des latitudes  (ex. "latitude")
 	TDim  string // dimension temporelle (ex. "time"), "" si absente
 	ZDim  string // dimension verticale (ex. "z"/"level"/"height"), "" si absente
+	CRS   CRS    // système de coordonnées ; zéro-valeur = CRS84
 	Data  *xarray.Dataset[float64]
 }
 

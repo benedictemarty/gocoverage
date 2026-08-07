@@ -122,7 +122,10 @@ formats binaires via un convertisseur.
 
 ## Autres limites connues
 
-- CRS84 uniquement.
+- **CRS décrit, non reprojeté** (comme pygeoapi) : CRS84 par défaut ; un CRS
+  EPSG (géographique/projeté) peut être fixé via `Collection.CRS` ou détecté
+  depuis une variable de conteneur CF (`grid_mapping_name`/`epsg_code`). Les
+  données ne sont pas reprojetées ; `bbox`/`coords` sont dans le CRS de stockage.
 - Une variable sans `units` est conservée (unité vide) — divergence assumée avec
   pygeoapi qui l'ignore.
 - Sorties natives disponibles : **netCDF** (`f=netcdf`) et **Zarr** zippé

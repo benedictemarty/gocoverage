@@ -66,8 +66,8 @@ func (c *Collection) Properties() CoverageProperties {
 	ys, _ := c.Data.Coord(c.YDim)
 	p := CoverageProperties{
 		BBox:       [4]float64{xs[0], ys[0], xs[len(xs)-1], ys[len(ys)-1]},
-		BBoxCRS:    crs84,
-		CRSType:    "GeographicCRS",
+		BBoxCRS:    c.CRS.id(),
+		CRSType:    c.CRS.typ(),
 		XAxisLabel: c.XDim,
 		YAxisLabel: c.YDim,
 		Width:      len(xs),

@@ -64,7 +64,14 @@ func collectionFromDataset(ds *xarray.Dataset[float64], id, title, xDim, yDim, t
 		}
 		ds = decoded
 	}
-	return &Collection{ID: id, Title: title, XDim: xDim, YDim: yDim, TDim: tDim, ZDim: zDim, Data: ds}, nil
+	// Détection du CRS de stockage (variable de conteneur CF), sans reprojection.
+	crs, crsVar := detectCRS(ds)
+	if crsVar != "" {
+		if reduced, err := ds.DropVars(crsVar); err == nil {
+			ds = reduced
+		}
+	}
+	return &Collection{ID: id, Title: title, XDim: xDim, YDim: yDim, TDim: tDim, ZDim: zDim, CRS: crs, Data: ds}, nil
 }
 
 // detectAxis renvoie la première dimension dont le nom (insensible à la casse)

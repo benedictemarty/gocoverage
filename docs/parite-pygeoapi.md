@@ -20,7 +20,7 @@ gocoverage. La référence est le code source réel de pygeoapi (branche `master
 | `_get_parameter_metadata`        | intégré à `CoverageJSON`/`Fields`   | ✅ |
 | `get_time_resolution` / duration | `Properties` (restime partiel)      | ⚠️ partiel |
 | formats natifs (`format_=netcdf`/`zarr`) | négociation `f=netcdf`/`zarr` | ✅ netCDF + Zarr (ZIP) |
-| CRS non-CRS84 (`_parse_storage_crs`) | —                               | ❌ à venir |
+| CRS de stockage (`_parse_storage_crs`, `crs_type`/`bbox_crs`) | `Collection.CRS` + `detectCRS` | ✅ **description** (EPSG explicite ou détecté) ; ❌ **reprojection** (comme pygeoapi) |
 
 | pygeoapi (`XarrayEDRProvider`)   | gocoverage                          | État |
 |----------------------------------|-------------------------------------|------|
@@ -59,11 +59,15 @@ gocoverage. La référence est le code source réel de pygeoapi (branche `master
    valeurs sont des secondes epoch plausibles (sinon numérique). Les subsets
    `subset=time(...)` acceptent les dates seules (l'heure `hh:mm:ss` entre en
    conflit avec le séparateur `:` — utiliser `datetime` pour un instant précis).
-3. **CRS** : CRS84 uniquement pour l'instant.
+3. **CRS** : le CRS est **décrit** (géographique/projeté, id EPSG) mais les
+   données ne sont **pas reprojetées** — exactement comme pygeoapi, dont
+   `query(bbox_crs=…)` n'est pas géré. Le CRS peut être fixé explicitement
+   (`Collection.CRS`, pendant de l'override `storage_crs`) ou détecté depuis une
+   variable de conteneur CF (`grid_mapping_name`/`epsg_code`). Sans pyproj en Go,
+   la détection couvre les cas où l'EPSG est présent ; sinon CRS84 par défaut.
 
 ## Prochains incréments possibles
 
-- Formats natifs en sortie (netcdf/zarr) via `xarray.WriteNetCDF` / Zarr.
-- Axe vertical `z` (cube/position).
 - Durées/résolutions temporelles complètes (ISO 8601 durations).
-- CRS projeté (`storage_crs`).
+- Reprojection effective (nécessiterait un équivalent pyproj en Go).
+- Détection CRS élargie (mapping `grid_mapping_name` → EPSG sans code explicite).

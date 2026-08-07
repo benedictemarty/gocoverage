@@ -5,6 +5,25 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.9.0] - 2026-08-07
+
+### Sprint « parité pygeoapi #8 » — description du CRS (sans reprojection)
+
+Reproduit `_parse_storage_crs` + le `crs_type`/`bbox_crs` de pygeoapi : le CRS
+est **décrit**, jamais **reprojeté** (pygeoapi ne gère pas non plus `bbox_crs`).
+
+- **`Collection.CRS`** (type `CRS` : id URI, type Geographic/Projected, EPSG) —
+  zéro-valeur = **CRS84**. Constructeurs `CRS84()` et `EPSGCRS(code, projected)`.
+  Pendant de l'override `provider_def['storage_crs']`.
+- **`CoverageJSON` et `Properties`** exposent désormais le CRS de la collection
+  (`referencing.system.type`/`id`, `bbox_crs`, `crs_type`) au lieu de CRS84 figé.
+- **`detectCRS`** : détection best-effort du CRS de stockage depuis une variable
+  de conteneur CF (`grid_mapping_name`/`epsg_code`, ou nom usuel `crs`/
+  `spatial_ref`…). La variable de conteneur est retirée des paramètres exposés.
+- Sans pyproj en Go : pas de reprojection ; détection limitée aux cas portant un
+  code EPSG (sinon CRS84, ou type `ProjectedCRS` sans id si projeté inconnu).
+- Tests : `TestCoverageJSONProjectedCRS`, `TestDefaultCRS84`, `TestDetectCRSFromVar`.
+
 ## [0.8.0] - 2026-08-07
 
 ### Sprint « parité pygeoapi #7 » — sortie native Zarr (ZIP)

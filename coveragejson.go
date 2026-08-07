@@ -133,7 +133,7 @@ func (c *Collection) CoverageJSON(ds *xarray.Dataset[float64]) ([]byte, error) {
 
 	referencing := []covReferencing{{
 		Coordinates: []string{"x", "y"},
-		System:      covSystem{Type: "GeographicCRS", ID: crs84},
+		System:      covSystem{Type: c.CRS.typ(), ID: c.CRS.id()},
 	}}
 
 	// Axe temporel éventuel (valeurs sous forme de chaînes, comme pygeoapi).

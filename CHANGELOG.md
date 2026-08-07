@@ -39,6 +39,12 @@ reproduite.
 - **Ouverture depuis fichiers** : `LoadNetCDF` et `LoadZarr` construisent une
   collection depuis un fichier netCDF / répertoire Zarr, avec détection
   automatique des axes X/Y/T par nom.
+  - ⚠️ **Portée réelle limitée** (mesurée empiriquement, voir README) :
+    `LoadNetCDF` ne lit fiablement que du **CDF-1 classique sans attributs**
+    (typiquement un aller-retour depuis xarray-go). Les fichiers réels — NetCDF-4/
+    HDF5, CDF-2/5, **attributs CF** (`units`, `long_name`), **dimension `time`
+    illimitée**, **packing** `scale_factor`/`add_offset` — ne se chargent PAS.
+    Zarr couvre le v2 non compressé / blosc selon l'implémentation xarray-go.
 - **Routes HTTP** : `/collections/{id}` (description : champs + propriétés),
   `/collections/{id}/coverage`, `/collections/{id}/position`,
   `/collections/{id}/cube`.

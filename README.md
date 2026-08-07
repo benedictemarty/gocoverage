@@ -1,7 +1,8 @@
 # gocoverage
 
 Serveur **OGC API - Coverages / EDR** en Go, adossé à
-[`xarray-go`](../xarray) comme couche de données (« provider »).
+[`xarray-go`](https://github.com/benedictemarty/xarray) comme couche de données
+(« provider »).
 
 Il reproduit les fonctions du **provider xarray de pygeoapi**
 (`XarrayProvider` + `XarrayEDRProvider`) — voir
@@ -29,11 +30,21 @@ GoKoala, GOAF) ; `gocoverage` est une démonstration compacte et autonome.
 | EDR `position` / `cube` (+ `z`) | `Collection.Position` / `Collection.Cube` |
 | ouverture netCDF / Zarr | `LoadNetCDF` / `LoadZarr` (⚠️ portée limitée, voir *Limitations I/O*) |
 
-## Lancer
+## Build & lancer
+
+`gocoverage` dépend de `xarray-go` via une directive `replace` locale
+(`go.mod` : `replace github.com/bmarty/xarray => ../xarray`). Clonez donc les
+deux dépôts côte à côte :
 
 ```bash
+git clone https://github.com/benedictemarty/xarray
+git clone https://github.com/benedictemarty/gocoverage
+cd gocoverage
 go run ./cmd/gocoverage      # écoute sur :8080 avec une collection de démo
 ```
+
+> Note : le chemin de module reste `github.com/bmarty/xarray` (historique) ; le
+> `replace` local suffit à construire l'ensemble depuis deux clones voisins.
 
 ## Endpoints
 

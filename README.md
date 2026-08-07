@@ -26,7 +26,7 @@ GoKoala, GOAF) ; `gocoverage` est une démonstration compacte et autonome.
 | `_get_coverage_properties` | `Collection.Properties` |
 | `query` (properties, subsets, bbox, datetime) | `Collection.Query` |
 | `gen_covjson` | `Collection.CoverageJSON` |
-| EDR `position` / `cube` | `Collection.Position` / `Collection.Cube` |
+| EDR `position` / `cube` (+ `z`) | `Collection.Position` / `Collection.Cube` |
 | ouverture netCDF / Zarr | `LoadNetCDF` / `LoadZarr` (⚠️ portée limitée, voir *Limitations I/O*) |
 
 ## Lancer
@@ -48,7 +48,8 @@ go run ./cmd/gocoverage      # écoute sur :8080 avec une collection de démo
 
 Paramètres de `coverage` : `properties=t2m,uwind`, `bbox=minx,miny,maxx,maxy`,
 `subset=Lat(43:45),Long(0:2)`, `datetime=lo/hi`.
-Paramètres de `position`/`cube` : `parameter-name=…`, `datetime=…`.
+Paramètres de `position`/`cube` : `parameter-name=…`, `datetime=…`, `z=…`
+(niveau vertical unique, sélectionné au plus proche si la collection a un axe Z).
 
 `datetime` accepte l'**ISO 8601** (`2020-01-01`, `2020-01-01T06:00:00Z`,
 intervalles `a/b`, bornes ouvertes `..`) ou des valeurs numériques (epoch). L'axe

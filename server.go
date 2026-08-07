@@ -151,9 +151,15 @@ func (s *Server) position(w http.ResponseWriter, r *http.Request, c *Collection)
 		writeErr(w, 400, err.Error())
 		return
 	}
+	z, err := parseZ(q.Get("z"))
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
 	ds, err := c.Position(xy[0], xy[1], EDRParams{
 		SelectProperties: parseList(q.Get("parameter-name")),
 		Datetime:         dt,
+		Z:                z,
 	})
 	if err != nil {
 		writeErr(w, 400, err.Error())
@@ -176,15 +182,34 @@ func (s *Server) cube(w http.ResponseWriter, r *http.Request, c *Collection) {
 		writeErr(w, 400, err.Error())
 		return
 	}
+	z, err := parseZ(q.Get("z"))
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
 	ds, err := c.Cube([4]float64{bb[0], bb[1], bb[2], bb[3]}, EDRParams{
 		SelectProperties: parseList(q.Get("parameter-name")),
 		Datetime:         dt,
+		Z:                z,
 	})
 	if err != nil {
 		writeErr(w, 400, err.Error())
 		return
 	}
 	s.writeCoverage(w, c, ds)
+}
+
+// parseZ analyse le paramètre EDR z (un niveau vertical unique). Vide → nil.
+func parseZ(s string) (*float64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return nil, fmt.Errorf("z invalide (niveau unique attendu): %w", err)
+	}
+	return &v, nil
 }
 
 // writeCoverage sérialise un Dataset en CoverageJSON.

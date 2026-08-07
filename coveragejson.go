@@ -95,6 +95,13 @@ func (c *Collection) CoverageJSON(ds *xarray.Dataset[float64]) ([]byte, error) {
 	if len(names) == 0 {
 		return nil, fmt.Errorf("aucun paramètre à exporter")
 	}
+	// Le domaine Grid ne modélise que x/y/(t) : un axe vertical à plusieurs
+	// niveaux n'est pas représentable. Sélectionner un niveau (paramètre z EDR).
+	if c.ZDim != "" {
+		if n, ok := ds.Dims()[c.ZDim]; ok && n > 1 {
+			return nil, fmt.Errorf("axe vertical %q à %d niveaux non représentable en CoverageJSON : sélectionnez un niveau (z=…)", c.ZDim, n)
+		}
+	}
 
 	xv, err := ds.Coord(c.XDim)
 	if err != nil {

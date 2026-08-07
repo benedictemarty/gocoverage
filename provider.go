@@ -22,6 +22,7 @@ type Collection struct {
 	XDim  string // dimension des longitudes (ex. "longitude")
 	YDim  string // dimension des latitudes  (ex. "latitude")
 	TDim  string // dimension temporelle (ex. "time"), "" si absente
+	ZDim  string // dimension verticale (ex. "z"/"level"/"height"), "" si absente
 	Data  *xarray.Dataset[float64]
 }
 
@@ -91,6 +92,11 @@ func (p *MemProvider) Add(c *Collection) error {
 	if c.TDim != "" {
 		if _, ok := dims[c.TDim]; !ok {
 			return fmt.Errorf("gocoverage: dimension T %q absente du Dataset", c.TDim)
+		}
+	}
+	if c.ZDim != "" {
+		if _, ok := dims[c.ZDim]; !ok {
+			return fmt.Errorf("gocoverage: dimension Z %q absente du Dataset", c.ZDim)
 		}
 	}
 	if _, ok := p.colls[c.ID]; !ok {

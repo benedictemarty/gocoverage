@@ -141,6 +141,11 @@ func (c *Collection) resolveAxis(name string) (string, error) {
 			return "", fmt.Errorf("axe %q: la collection n'a pas d'axe temporel", name)
 		}
 		return c.TDim, nil
+	case "z", "level", "height", "depth", "elevation", "vertical":
+		if c.ZDim == "" {
+			return "", fmt.Errorf("axe %q: la collection n'a pas d'axe vertical", name)
+		}
+		return c.ZDim, nil
 	}
 	for dim := range c.Data.Dims() {
 		if strings.ToLower(dim) == n {

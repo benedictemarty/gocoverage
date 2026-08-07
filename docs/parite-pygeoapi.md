@@ -24,11 +24,11 @@ gocoverage. La référence est le code source réel de pygeoapi (branche `master
 
 | pygeoapi (`XarrayEDRProvider`)   | gocoverage                          | État |
 |----------------------------------|-------------------------------------|------|
-| `position`                       | `Collection.Position`               | ✅ |
-| `cube`                           | `Collection.Cube`                   | ✅ |
+| `position`                       | `Collection.Position`               | ✅ (+ `z`) |
+| `cube`                           | `Collection.Cube`                   | ✅ (+ `z`) |
 | `get_parameters` (base EDR)      | intégré à `CoverageJSON`            | ✅ |
-| `_make_datetime`                 | `parseDatetime`                     | ✅ (numérique) |
-| axe vertical `z`                 | —                                   | ❌ à venir |
+| `_make_datetime`                 | `parseDatetime`                     | ✅ (ISO 8601 + numérique) |
+| axe vertical `z`                 | `Collection.ZDim` + param `z`       | ✅ (niveau unique, au plus proche) |
 | `area` (polygone)                | —                                   | ❌ (non présent dans xarray_edr non plus) |
 
 ## Détails de fidélité (`gen_covjson`)

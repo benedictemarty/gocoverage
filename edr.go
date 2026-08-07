@@ -10,6 +10,23 @@ import (
 type EDRParams struct {
 	SelectProperties []string    // sous-ensemble de paramètres (vide = tous)
 	Datetime         *[2]float64 // plage temporelle, nil si absente
+	Z                *float64    // niveau vertical (sélection au plus proche), nil si absent
+}
+
+// applyZ sélectionne le niveau vertical le plus proche si p.Z est fourni et que
+// la collection possède un axe vertical (comme XarrayEDRProvider : le niveau est
+// réduit à un point). Si p.Z est fourni sans axe vertical, il est ignoré.
+func (c *Collection) applyZ(ds *xarray.Dataset[float64], p EDRParams) (*xarray.Dataset[float64], error) {
+	if p.Z == nil || c.ZDim == "" {
+		return ds, nil
+	}
+	out, err := dsMap(ds, c.ZDim, func(da *xarray.DataArray[float64]) (*xarray.DataArray[float64], error) {
+		return da.SelNearest(c.ZDim, *p.Z) // réduit la dimension verticale
+	})
+	if err != nil {
+		return nil, fmt.Errorf("niveau z: %w", err)
+	}
+	return out, nil
 }
 
 // Position reproduit XarrayEDRProvider.position : sélection au point (x, y) le
@@ -32,6 +49,9 @@ func (c *Collection) Position(x, y float64, p EDRParams) (*xarray.Dataset[float6
 			return nil, fmt.Errorf("datetime: %w", err)
 		}
 	}
+	if ds, err = c.applyZ(ds, p); err != nil {
+		return nil, err
+	}
 	if ds, err = dsSelNearest(ds, c.XDim, x); err != nil {
 		return nil, fmt.Errorf("position X: %w", err)
 	}
@@ -50,5 +70,9 @@ func (c *Collection) Cube(bbox [4]float64, p EDRParams) (*xarray.Dataset[float64
 		BBox:       &bbox,
 		Datetime:   p.Datetime,
 	}
-	return c.Query(q)
+	ds, err := c.Query(q)
+	if err != nil {
+		return nil, err
+	}
+	return c.applyZ(ds, p)
 }

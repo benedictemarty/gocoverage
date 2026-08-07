@@ -5,6 +5,23 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.6.0] - 2026-08-07
+
+### Sprint « parité pygeoapi #5 » — axe vertical z (EDR)
+
+- **`Collection.ZDim`** : axe vertical optionnel (ex. `z`/`level`/`height`/
+  `pressure`), détecté par nom à l'ouverture de fichier.
+- **Paramètre EDR `z`** dans `position` et `cube` : sélection du **niveau le plus
+  proche** (comme `XarrayEDRProvider`), qui réduit la dimension verticale. `z`
+  fourni à une collection sans axe vertical est ignoré (comme pygeoapi).
+- **`subset`/`resolveAxis`** : alias d'axe vertical (`z`, `level`, `height`,
+  `depth`, `elevation`, `vertical`).
+- **Garde CoverageJSON** : un axe vertical à plusieurs niveaux n'étant pas
+  représentable dans le domaine Grid (x/y/t), l'export renvoie une erreur
+  explicite invitant à sélectionner un niveau (`z=…`).
+- Tests : `TestPositionWithZ`, `TestCubeWithZ`, `TestCoverageZMultiLevelRejected`,
+  `TestZOnCollectionWithoutZ`.
+
 ## [0.5.0] - 2026-08-07
 
 ### Sprint « parité pygeoapi #4 » — datetime ISO 8601

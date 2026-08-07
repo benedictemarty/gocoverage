@@ -51,6 +51,7 @@ func collectionFromDataset(ds *xarray.Dataset[float64], id, title, xDim, yDim, t
 	if tDim == "" {
 		tDim = detectAxis(dims, "time", "t")
 	}
+	zDim := detectAxis(dims, "z", "level", "height", "depth", "elevation", "pressure", "plev", "lev")
 	if xDim == "" || yDim == "" {
 		return nil, fmt.Errorf("axes X/Y introuvables dans les dimensions %v", keysOf(dims))
 	}
@@ -63,7 +64,7 @@ func collectionFromDataset(ds *xarray.Dataset[float64], id, title, xDim, yDim, t
 		}
 		ds = decoded
 	}
-	return &Collection{ID: id, Title: title, XDim: xDim, YDim: yDim, TDim: tDim, Data: ds}, nil
+	return &Collection{ID: id, Title: title, XDim: xDim, YDim: yDim, TDim: tDim, ZDim: zDim, Data: ds}, nil
 }
 
 // detectAxis renvoie la première dimension dont le nom (insensible à la casse)

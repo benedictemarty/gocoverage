@@ -90,17 +90,19 @@ a élargi le périmètre. État mesuré (fichiers générés puis passés à `Lo
 | CDF-1 **+ attributs** (`units`, `long_name`) | métadonnées CF | ✅ chargé, `units` exposé dans `Fields` |
 | CDF-1 **+ `scale_factor`/`add_offset`/`_FillValue`** | packing | ✅ **dépacké** (`DecodeCF`), fill → NaN |
 | CDF-1 **+ `time: "hours since…"`** | axe temporel CF | ✅ **décodé** en epoch (`DecodeTime`) |
-| CDF-1 **+ `time` illimitée** (`numrecs`≠0) | climato typique | ❌ **rejet propre** (erreur, plus de panic) |
+| CDF-1 **+ `time` illimitée** (`numrecs`>0) | climato typique | ✅ **chargé** (variables d'enregistrement désentrelacées) |
 | **CDF-2** (64-bit offset) / **CDF-5** | gros fichiers | ❌ rejet propre (version) |
 | **NetCDF-4 / HDF5** | défaut de xarray/CDO | ❌ rejet propre (signature) |
 
-**Conclusion honnête :** `LoadNetCDF` lit désormais le **CDF-1 classique avec
-attributs et décodage CF minimal** (packing + temps). Restent hors périmètre les
-formats binaires **NetCDF-4/HDF5**, **CDF-2/5** et les **dimensions illimitées** —
-or la plupart des jeux climato réels sont en NetCDF-4/HDF5. Pour ces formats, et
-pour l'écosystème complet (dask, CF avancé), xarray-go n'est **pas** un substitut
-à xarray Python ; il l'est pour l'API, les opérations sur tableaux numériques et
-l'échange CDF-1 + CF de base.
+Toutes les lignes ✅ ci-dessus sont **vérifiées empiriquement** sur des fichiers
+écrits par Python xarray (`NETCDF3_CLASSIC`).
+
+**Conclusion honnête :** `LoadNetCDF` lit désormais le **CDF-1 classique** avec
+attributs, décodage CF (packing + temps) **et dimension illimitée**. Reste hors
+périmètre le binaire **NetCDF-4/HDF5** (format le plus courant des jeux réels) et
+**CDF-2/5**. Pour ces formats et l'écosystème complet (dask, CF avancé), xarray-go
+n'est **pas** un substitut à xarray Python ; il l'est pour l'API, les opérations
+sur tableaux numériques et l'échange CDF-1 + CF.
 
 ## Autres limites connues
 

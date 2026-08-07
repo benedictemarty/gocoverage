@@ -26,11 +26,14 @@ S'appuie sur le sprint 60 de xarray-go (attributs netCDF + `DecodeCF`/`DecodeTim
 ### Corrigé (frontière I/O, cf. tableau README)
 - Les netCDF **avec attributs CF** se chargent désormais (auparavant :
   `unexpected EOF`).
-- Une **dimension illimitée** (`numrecs`≠0) est refusée par une erreur explicite
-  (auparavant : panic).
+- Les netCDF à **dimension `time` illimitée** (cas climato le plus courant) se
+  chargent désormais (auparavant : panic, puis rejet). Variables d'enregistrement
+  désentrelacées côté xarray-go (sprint 60).
+- Lignes ✅ du tableau I/O du README **vérifiées empiriquement** sur des fichiers
+  écrits par Python xarray.
 
 ### Reste hors périmètre
-- NetCDF-4/HDF5, CDF-2/5, dimensions illimitées, dask, CF avancé.
+- NetCDF-4/HDF5, CDF-2/5, dask, CF avancé.
 
 ## [0.2.0] - 2026-08-07
 

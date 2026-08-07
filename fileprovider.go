@@ -1,0 +1,75 @@
+package gocoverage
+
+import (
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/bmarty/xarray"
+)
+
+// LoadNetCDF ouvre un fichier netCDF et construit une Collection — pendant Go de
+// l'ouverture xarray.open_dataset dans pygeoapi. Les dimensions X/Y/T sont
+// détectées par nom si xDim/yDim/tDim sont laissés vides.
+func LoadNetCDF(path, id, title, xDim, yDim, tDim string) (*Collection, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("ouverture %q: %w", path, err)
+	}
+	defer f.Close()
+	ds, err := xarray.ReadDatasetNetCDF[float64](f)
+	if err != nil {
+		return nil, fmt.Errorf("lecture netCDF %q: %w", path, err)
+	}
+	return collectionFromDataset(ds, id, title, xDim, yDim, tDim)
+}
+
+// LoadZarr ouvre un répertoire Zarr et construit une Collection — pendant Go de
+// xarray.open_zarr dans pygeoapi.
+func LoadZarr(dir, id, title, xDim, yDim, tDim string) (*Collection, error) {
+	ds, err := xarray.ReadDatasetZarr(dir)
+	if err != nil {
+		return nil, fmt.Errorf("lecture Zarr %q: %w", dir, err)
+	}
+	return collectionFromDataset(ds, id, title, xDim, yDim, tDim)
+}
+
+// collectionFromDataset assemble une Collection, en détectant au besoin les axes.
+func collectionFromDataset(ds *xarray.Dataset[float64], id, title, xDim, yDim, tDim string) (*Collection, error) {
+	dims := ds.Dims()
+	if xDim == "" {
+		xDim = detectAxis(dims, "longitude", "lon", "x")
+	}
+	if yDim == "" {
+		yDim = detectAxis(dims, "latitude", "lat", "y")
+	}
+	if tDim == "" {
+		tDim = detectAxis(dims, "time", "t")
+	}
+	if xDim == "" || yDim == "" {
+		return nil, fmt.Errorf("axes X/Y introuvables dans les dimensions %v", keysOf(dims))
+	}
+	return &Collection{ID: id, Title: title, XDim: xDim, YDim: yDim, TDim: tDim, Data: ds}, nil
+}
+
+// detectAxis renvoie la première dimension dont le nom (insensible à la casse)
+// correspond à l'un des candidats, ou "" si aucune.
+func detectAxis(dims map[string]int, candidates ...string) string {
+	for name := range dims {
+		low := strings.ToLower(name)
+		for _, cand := range candidates {
+			if low == cand {
+				return name
+			}
+		}
+	}
+	return ""
+}
+
+func keysOf(m map[string]int) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}

@@ -1,0 +1,288 @@
+package gocoverage
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/bmarty/xarray"
+)
+
+// QueryParams rassemble les paramètres d'une requête « query » (à la manière de
+// pygeoapi XarrayProvider.query) : sélection de champs, emprise, sous-ensembles
+// par axe nommé et plage temporelle.
+type QueryParams struct {
+	Properties []string    // noms des paramètres à conserver (vide = tous)
+	BBox       *[4]float64 // [minX, minY, maxX, maxY], nil si absent
+	Subsets    []Subset    // sous-ensembles par axe nommé
+	Datetime   *[2]float64 // plage temporelle [lo, hi], nil si absente
+}
+
+// Subset est un sous-ensemble sur un axe : Lo..Hi, ou point unique si Lo==Hi
+// avec Point=true (sélection au plus proche).
+type Subset struct {
+	Axis   string
+	Lo, Hi float64
+	Point  bool
+}
+
+// Query applique les paramètres de requête à la collection et renvoie le
+// Dataset résultant restreint aux champs demandés.
+func (c *Collection) Query(q QueryParams) (*xarray.Dataset[float64], error) {
+	ds := c.Data
+
+	// Exclusivités reproduites de pygeoapi.
+	subsetDims := map[string]bool{}
+	for _, s := range q.Subsets {
+		if dim, err := c.resolveAxis(s.Axis); err == nil {
+			subsetDims[dim] = true
+		}
+	}
+	if q.BBox != nil && (subsetDims[c.XDim] || subsetDims[c.YDim]) {
+		return nil, fmt.Errorf("bbox et subset de coordonnées sont exclusifs")
+	}
+	if q.Datetime != nil && c.TDim != "" && subsetDims[c.TDim] {
+		return nil, fmt.Errorf("datetime et subset temporel sont exclusifs")
+	}
+
+	// 1. Sélection des champs (properties / range-subset).
+	if len(q.Properties) > 0 {
+		var err error
+		ds, err = selectVars(ds, q.Properties)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// 2. Emprise spatiale (bbox) sur X et Y.
+	if q.BBox != nil {
+		bb := *q.BBox
+		var err error
+		if ds, err = dsSelRange(ds, c.XDim, bb[0], bb[2]); err != nil {
+			return nil, fmt.Errorf("bbox X: %w", err)
+		}
+		if ds, err = dsSelRange(ds, c.YDim, bb[1], bb[3]); err != nil {
+			return nil, fmt.Errorf("bbox Y: %w", err)
+		}
+	}
+
+	// 3. Sous-ensembles par axe nommé (subset=Lat(43:45),Long(0:2)).
+	for _, s := range q.Subsets {
+		dim, err := c.resolveAxis(s.Axis)
+		if err != nil {
+			return nil, err
+		}
+		if s.Point {
+			ds, err = dsSelNearest(ds, dim, s.Lo)
+		} else {
+			ds, err = dsSelRange(ds, dim, s.Lo, s.Hi)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("subset %s: %w", s.Axis, err)
+		}
+	}
+
+	// 4. Plage temporelle (datetime).
+	if q.Datetime != nil {
+		if c.TDim == "" {
+			return nil, fmt.Errorf("la collection %q n'a pas d'axe temporel", c.ID)
+		}
+		dt := *q.Datetime
+		var err error
+		if ds, err = dsSelRange(ds, c.TDim, dt[0], dt[1]); err != nil {
+			return nil, fmt.Errorf("datetime: %w", err)
+		}
+	}
+
+	return ds, nil
+}
+
+// resolveAxis fait correspondre un nom d'axe de requête à une dimension du
+// Dataset. Accepte le nom exact de la dimension (insensible à la casse) et les
+// alias usuels Lat/Long/Lon/Time.
+func (c *Collection) resolveAxis(name string) (string, error) {
+	n := strings.ToLower(strings.TrimSpace(name))
+	switch n {
+	case "lat", "latitude", "y":
+		return c.YDim, nil
+	case "long", "lon", "longitude", "x":
+		return c.XDim, nil
+	case "time", "t", "datetime":
+		if c.TDim == "" {
+			return "", fmt.Errorf("axe %q: la collection n'a pas d'axe temporel", name)
+		}
+		return c.TDim, nil
+	}
+	for dim := range c.Data.Dims() {
+		if strings.ToLower(dim) == n {
+			return dim, nil
+		}
+	}
+	return "", fmt.Errorf("axe inconnu: %q", name)
+}
+
+// selectVars restreint le Dataset aux variables demandées.
+func selectVars(ds *xarray.Dataset[float64], names []string) (*xarray.Dataset[float64], error) {
+	keep := map[string]bool{}
+	for _, n := range names {
+		keep[n] = true
+	}
+	var drop []string
+	for _, v := range ds.VarNames() {
+		if !keep[v] {
+			drop = append(drop, v)
+		}
+	}
+	kept := len(ds.VarNames()) - len(drop)
+	if kept == 0 {
+		return nil, fmt.Errorf("aucun paramètre valide dans %v", names)
+	}
+	if len(drop) == 0 {
+		return ds, nil
+	}
+	return ds.DropVars(drop...)
+}
+
+// dsSelRange applique SelRange à chaque variable possédant la dimension dim et
+// reconstruit un Dataset (Dataset n'expose pas SelRange directement).
+func dsSelRange(ds *xarray.Dataset[float64], dim string, lo, hi float64) (*xarray.Dataset[float64], error) {
+	return dsMap(ds, dim, func(da *xarray.DataArray[float64]) (*xarray.DataArray[float64], error) {
+		return da.SelRange(dim, lo, hi)
+	})
+}
+
+// dsSelNearest sélectionne au plus proche sur la dimension dim, en conservant
+// la dimension (taille 1) et sa coordonnée : on repère la coordonnée la plus
+// proche puis on applique SelRange (SelNearest supprimerait la dimension, ce qui
+// empêcherait la construction du CoverageJSON PointSeries).
+func dsSelNearest(ds *xarray.Dataset[float64], dim string, val float64) (*xarray.Dataset[float64], error) {
+	coord, err := ds.Coord(dim)
+	if err != nil {
+		return nil, err
+	}
+	if len(coord) == 0 {
+		return nil, fmt.Errorf("coordonnée %q vide", dim)
+	}
+	nearest, best := coord[0], absf(coord[0]-val)
+	for _, c := range coord[1:] {
+		if d := absf(c - val); d < best {
+			nearest, best = c, d
+		}
+	}
+	return dsSelRange(ds, dim, nearest, nearest)
+}
+
+// dsMap applique fn aux variables qui possèdent la dimension dim, laisse les
+// autres intactes, et reconstruit un Dataset.
+func dsMap(ds *xarray.Dataset[float64], dim string, fn func(*xarray.DataArray[float64]) (*xarray.DataArray[float64], error)) (*xarray.Dataset[float64], error) {
+	vars := map[string]*xarray.DataArray[float64]{}
+	for _, name := range ds.VarNames() {
+		da, err := ds.Get(name)
+		if err != nil {
+			return nil, err
+		}
+		if da.HasDim(dim) {
+			da, err = fn(da)
+			if err != nil {
+				return nil, err
+			}
+		}
+		vars[name] = da
+	}
+	return xarray.NewDataset(vars)
+}
+
+// parseSubsets analyse la chaîne « subset » d'OGC API : une liste séparée par
+// des virgules d'expressions Axe(lo:hi) ou Axe(val). Ex. "Lat(43:45),Long(0:2)".
+func parseSubsets(s string) ([]Subset, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+	var out []Subset
+	// Découpe sur les virgules situées hors des parenthèses.
+	for _, expr := range splitTopLevel(s, ',') {
+		expr = strings.TrimSpace(expr)
+		open := strings.IndexByte(expr, '(')
+		if open < 0 || !strings.HasSuffix(expr, ")") {
+			return nil, fmt.Errorf("subset invalide %q (attendu Axe(lo:hi))", expr)
+		}
+		axis := strings.TrimSpace(expr[:open])
+		inner := expr[open+1 : len(expr)-1]
+		sub := Subset{Axis: axis}
+		if i := strings.IndexByte(inner, ':'); i >= 0 {
+			lo, err := strconv.ParseFloat(strings.TrimSpace(inner[:i]), 64)
+			if err != nil {
+				return nil, fmt.Errorf("subset %q: borne basse: %w", axis, err)
+			}
+			hi, err := strconv.ParseFloat(strings.TrimSpace(inner[i+1:]), 64)
+			if err != nil {
+				return nil, fmt.Errorf("subset %q: borne haute: %w", axis, err)
+			}
+			sub.Lo, sub.Hi = lo, hi
+		} else {
+			v, err := strconv.ParseFloat(strings.TrimSpace(inner), 64)
+			if err != nil {
+				return nil, fmt.Errorf("subset %q: valeur: %w", axis, err)
+			}
+			sub.Lo, sub.Hi, sub.Point = v, v, true
+		}
+		out = append(out, sub)
+	}
+	return out, nil
+}
+
+// parseDatetime analyse le paramètre datetime d'OGC API : "lo/hi", ou instant
+// unique "v" (interprété comme [v, v]). Les bornes ouvertes ".." sont acceptées.
+func parseDatetime(s string, ext [2]float64) (*[2]float64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+	lo, hi := ext[0], ext[1]
+	if i := strings.IndexByte(s, '/'); i >= 0 {
+		a, b := strings.TrimSpace(s[:i]), strings.TrimSpace(s[i+1:])
+		if a != "" && a != ".." {
+			v, err := strconv.ParseFloat(a, 64)
+			if err != nil {
+				return nil, fmt.Errorf("datetime borne basse: %w", err)
+			}
+			lo = v
+		}
+		if b != "" && b != ".." {
+			v, err := strconv.ParseFloat(b, 64)
+			if err != nil {
+				return nil, fmt.Errorf("datetime borne haute: %w", err)
+			}
+			hi = v
+		}
+	} else {
+		v, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return nil, fmt.Errorf("datetime: %w", err)
+		}
+		lo, hi = v, v
+	}
+	return &[2]float64{lo, hi}, nil
+}
+
+// splitTopLevel découpe s sur le séparateur sep en ignorant ceux situés à
+// l'intérieur de parenthèses.
+func splitTopLevel(s string, sep byte) []string {
+	var out []string
+	depth, start := 0, 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case sep:
+			if depth == 0 {
+				out = append(out, s[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(out, s[start:])
+}

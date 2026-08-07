@@ -1,0 +1,221 @@
+package gocoverage
+
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"strconv"
+
+	"github.com/bmarty/xarray"
+)
+
+// Structures CoverageJSON reproduisant fidèlement gen_covjson de pygeoapi
+// (XarrayProvider) : domaine Grid (axes réguliers start/stop/num) ou PointSeries
+// (1×1), axe temporel optionnel, paramètres multiples.
+
+type covJSON struct {
+	Type       string              `json:"type"` // "Coverage"
+	Domain     covDomain           `json:"domain"`
+	Parameters map[string]covParam `json:"parameters"`
+	Ranges     map[string]covNdArr `json:"ranges"`
+}
+
+type covDomain struct {
+	Type        string                 `json:"type"`       // "Domain"
+	DomainType  string                 `json:"domainType"` // "Grid" | "PointSeries"
+	Axes        map[string]interface{} `json:"axes"`
+	Referencing []covReferencing       `json:"referencing"`
+}
+
+// covRegularAxis : axe régulier {start, stop, num} (cas Grid).
+type covRegularAxis struct {
+	Start float64 `json:"start"`
+	Stop  float64 `json:"stop"`
+	Num   int     `json:"num"`
+}
+
+// covValuesAxis : axe par valeurs explicites (cas PointSeries et axe temporel).
+type covValuesAxis struct {
+	Values []interface{} `json:"values"`
+}
+
+type covReferencing struct {
+	Coordinates []string  `json:"coordinates"`
+	System      covSystem `json:"system"`
+}
+
+type covSystem struct {
+	Type     string `json:"type"`
+	ID       string `json:"id,omitempty"`
+	Calendar string `json:"calendar,omitempty"`
+}
+
+type covParam struct {
+	ID               string      `json:"id"`
+	Type             string      `json:"type"` // "Parameter"
+	Name             string      `json:"name,omitempty"`
+	ObservedProperty covObserved `json:"observedProperty"`
+	Unit             *covUnit    `json:"unit,omitempty"`
+}
+
+type covObserved struct {
+	ID    string            `json:"id"`
+	Label map[string]string `json:"label"`
+}
+
+type covUnit struct {
+	Symbol covSymbol `json:"symbol"`
+}
+
+type covSymbol struct {
+	Value string `json:"value"`
+	Type  string `json:"type"`
+}
+
+type covNdArr struct {
+	Type      string        `json:"type"` // "NdArray"
+	DataType  string        `json:"dataType"`
+	AxisNames []string      `json:"axisNames"`
+	Shape     []int         `json:"shape"`
+	Values    []interface{} `json:"values"` // null pour NaN
+}
+
+const (
+	crs84   = "http://www.opengis.net/def/crs/OGC/1.3/CRS84"
+	uomUCUM = "http://www.opengis.net/def/uom/UCUM/"
+)
+
+// CoverageJSON produit un document CoverageJSON à partir d'un Dataset — pendant
+// Go de gen_covjson. Chaque variable devient un paramètre et une portée (range).
+// Reproduit les conventions pygeoapi : axes réguliers, bascule PointSeries pour
+// une grille 1×1, axe temporel en valeurs.
+func (c *Collection) CoverageJSON(ds *xarray.Dataset[float64]) ([]byte, error) {
+	names := ds.VarNames()
+	if len(names) == 0 {
+		return nil, fmt.Errorf("aucun paramètre à exporter")
+	}
+
+	xv, err := ds.Coord(c.XDim)
+	if err != nil {
+		return nil, fmt.Errorf("coordonnée X %q: %w", c.XDim, err)
+	}
+	yv, err := ds.Coord(c.YDim)
+	if err != nil {
+		return nil, fmt.Errorf("coordonnée Y %q: %w", c.YDim, err)
+	}
+	width, height := len(xv), len(yv)
+
+	axes := map[string]interface{}{}
+	domainType := "Grid"
+	if width == 1 && height == 1 {
+		// PointSeries : x et y donnés par leur unique valeur.
+		domainType = "PointSeries"
+		axes["x"] = covValuesAxis{Values: []interface{}{xv[0]}}
+		axes["y"] = covValuesAxis{Values: []interface{}{yv[0]}}
+	} else {
+		axes["x"] = covRegularAxis{Start: xv[0], Stop: xv[len(xv)-1], Num: width}
+		axes["y"] = covRegularAxis{Start: yv[0], Stop: yv[len(yv)-1], Num: height}
+	}
+
+	referencing := []covReferencing{{
+		Coordinates: []string{"x", "y"},
+		System:      covSystem{Type: "GeographicCRS", ID: crs84},
+	}}
+
+	// Axe temporel éventuel (valeurs sous forme de chaînes, comme pygeoapi).
+	timeSteps := 0
+	if c.TDim != "" {
+		if tv, err := ds.Coord(c.TDim); err == nil && len(tv) > 0 {
+			timeSteps = len(tv)
+			vals := make([]interface{}, len(tv))
+			for i, t := range tv {
+				vals[i] = strconv.FormatFloat(t, 'g', -1, 64)
+			}
+			axes["t"] = covValuesAxis{Values: vals}
+			referencing = append(referencing, covReferencing{
+				Coordinates: []string{"t"},
+				System:      covSystem{Type: "TemporalRS", Calendar: "Gregorian"},
+			})
+		}
+	}
+
+	params := map[string]covParam{}
+	ranges := map[string]covNdArr{}
+	fieldsByName := c.fieldsMap()
+	for _, name := range names {
+		da, err := ds.Get(name)
+		if err != nil {
+			return nil, err
+		}
+		f := fieldsByName[name]
+		params[name] = covParam{
+			ID:               name,
+			Type:             "Parameter",
+			Name:             f.Title,
+			ObservedProperty: covObserved{ID: name, Label: map[string]string{"en": labelOr(f.Title, name)}},
+			Unit:             unitOf(f.Unit),
+		}
+
+		axisNames := []string{"y", "x"}
+		shape := []int{height, width}
+		if timeSteps > 0 && da.HasDim(c.TDim) {
+			axisNames = append([]string{"t"}, axisNames...)
+			shape = append([]int{timeSteps}, shape...)
+		}
+		ranges[name] = covNdArr{
+			Type:      "NdArray",
+			DataType:  fieldType(f),
+			AxisNames: axisNames,
+			Shape:     shape,
+			Values:    withNaNAsNull(da.Data()),
+		}
+	}
+
+	doc := covJSON{
+		Type: "Coverage",
+		Domain: covDomain{
+			Type:        "Domain",
+			DomainType:  domainType,
+			Axes:        axes,
+			Referencing: referencing,
+		},
+		Parameters: params,
+		Ranges:     ranges,
+	}
+	return json.MarshalIndent(doc, "", "  ")
+}
+
+// withNaNAsNull convertit un slice float64 en []interface{} avec null pour NaN
+// (JSON ne représente pas NaN), comme le fait pygeoapi.
+func withNaNAsNull(data []float64) []interface{} {
+	out := make([]interface{}, len(data))
+	for i, v := range data {
+		if math.IsNaN(v) {
+			out[i] = nil
+		} else {
+			out[i] = v
+		}
+	}
+	return out
+}
+
+func unitOf(u string) *covUnit {
+	if u == "" {
+		return nil
+	}
+	return &covUnit{Symbol: covSymbol{Value: u, Type: uomUCUM}}
+}
+
+func labelOr(title, name string) string {
+	if title != "" {
+		return title
+	}
+	return name
+}
+
+func fieldType(f Field) string {
+	if f.Type != "" {
+		return f.Type
+	}
+	return "float"
+}

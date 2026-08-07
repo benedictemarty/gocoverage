@@ -50,15 +50,20 @@ gocoverage. La référence est le code source réel de pygeoapi (branche `master
 1. **Variables sans `units`** : pygeoapi les ignore (`get_fields`). gocoverage
    les conserve avec une unité vide, pour rester exploitable avec des jeux de
    données xarray-go qui ne portent pas toujours cette métadonnée.
-2. **Temps numérique** : l'axe temporel est un `float64` en **secondes depuis
+2. **Temps** : l'axe temporel interne est un `float64` en **secondes depuis
    l'epoch Unix** (décodé depuis les `units` CF « `<unité> since <date>` » à
-   l'ouverture, via `xarray.DecodeTime`). Le paramètre `datetime` attend donc
-   des bornes numériques (epoch) et `..`, pas encore des dates ISO 8601.
+   l'ouverture, via `xarray.DecodeTime`). Côté **entrée**, `datetime` accepte
+   désormais les **dates ISO 8601** (`2020-01-01`, `2020-01-01T06:00:00Z`,
+   intervalles `a/b`, bornes ouvertes `..`) *et* les valeurs numériques. Côté
+   **sortie**, l'axe `t` du CoverageJSON est formaté en ISO 8601 quand les
+   valeurs sont des secondes epoch plausibles (sinon numérique). Les subsets
+   `subset=time(...)` acceptent les dates seules (l'heure `hh:mm:ss` entre en
+   conflit avec le séparateur `:` — utiliser `datetime` pour un instant précis).
 3. **CRS** : CRS84 uniquement pour l'instant.
 
 ## Prochains incréments possibles
 
 - Formats natifs en sortie (netcdf/zarr) via `xarray.WriteNetCDF` / Zarr.
 - Axe vertical `z` (cube/position).
-- Dates ISO 8601 et durées/résolutions temporelles complètes.
+- Durées/résolutions temporelles complètes (ISO 8601 durations).
 - CRS projeté (`storage_crs`).

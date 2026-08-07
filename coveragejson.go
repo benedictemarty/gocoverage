@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"time"
 
 	"github.com/bmarty/xarray"
 )
@@ -127,9 +128,14 @@ func (c *Collection) CoverageJSON(ds *xarray.Dataset[float64]) ([]byte, error) {
 	if c.TDim != "" {
 		if tv, err := ds.Coord(c.TDim); err == nil && len(tv) > 0 {
 			timeSteps = len(tv)
+			iso := allEpochSeconds(tv)
 			vals := make([]interface{}, len(tv))
 			for i, t := range tv {
-				vals[i] = strconv.FormatFloat(t, 'g', -1, 64)
+				if iso {
+					vals[i] = time.Unix(int64(t), 0).UTC().Format(time.RFC3339)
+				} else {
+					vals[i] = strconv.FormatFloat(t, 'g', -1, 64)
+				}
 			}
 			axes["t"] = covValuesAxis{Values: vals}
 			referencing = append(referencing, covReferencing{
@@ -218,4 +224,18 @@ func fieldType(f Field) string {
 		return f.Type
 	}
 	return "float"
+}
+
+// allEpochSeconds indique si toutes les valeurs temporelles tombent dans une
+// plage plausible de secondes epoch (≈ 1973 à 2100) — auquel cas l'axe est
+// formaté en ISO 8601 dans le CoverageJSON. Les axes temps synthétiques (petits
+// entiers) restent numériques.
+func allEpochSeconds(tv []float64) bool {
+	const lo, hi = 1e8, 4.1e9
+	for _, t := range tv {
+		if t < lo || t > hi {
+			return false
+		}
+	}
+	return len(tv) > 0
 }

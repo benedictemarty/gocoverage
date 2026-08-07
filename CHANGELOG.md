@@ -5,6 +5,22 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.5.0] - 2026-08-07
+
+### Sprint « parité pygeoapi #4 » — datetime ISO 8601
+
+- **`datetime` accepte l'ISO 8601 en entrée** (comme pygeoapi) : dates
+  (`2020-01-01`), instants (`2020-01-01T06:00:00Z`), intervalles `a/b` et bornes
+  ouvertes `..`, converties vers le temps interne (secondes epoch). Les valeurs
+  numériques restent acceptées (rétro-compatibilité, axes temps synthétiques).
+- **Sortie CoverageJSON** : l'axe temporel `t` est formaté en **ISO 8601**
+  lorsque les valeurs sont des secondes epoch plausibles (sinon numérique),
+  au lieu d'un nombre brut.
+- `subset=time(...)` accepte les dates seules (l'heure `hh:mm:ss` entre en
+  conflit avec le séparateur de plage `:` ; utiliser `datetime` pour un instant).
+- Tests : `TestParseDatetimeISO`, `TestCoverageJSONTimeISO` + validation HTTP
+  bout en bout (`datetime` ISO filtre l'axe temps, sortie ISO).
+
 ## [0.4.0] - 2026-08-07
 
 ### Sprint « parité pygeoapi #3 » — ouverture NetCDF-4/HDF5 par conversion

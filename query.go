@@ -4,9 +4,38 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bmarty/xarray"
 )
+
+// isoLayouts : formats de date/heure ISO 8601 acceptés en entrée pour les axes
+// temporels (le temps interne est en secondes depuis l'epoch Unix).
+var isoLayouts = []string{
+	time.RFC3339,
+	"2006-01-02T15:04:05Z07:00",
+	"2006-01-02T15:04:05",
+	"2006-01-02 15:04:05",
+	"2006-01-02T15:04",
+	"2006-01-02 15:04",
+	"2006-01-02",
+}
+
+// parseTimeOrFloat interprète une borne d'axe : un nombre (epoch/valeur brute)
+// ou une date ISO 8601 convertie en secondes depuis l'epoch Unix. Permet
+// d'exprimer datetime/subset temporel en ISO 8601 comme pygeoapi.
+func parseTimeOrFloat(s string) (float64, error) {
+	s = strings.TrimSpace(s)
+	if v, err := strconv.ParseFloat(s, 64); err == nil {
+		return v, nil
+	}
+	for _, l := range isoLayouts {
+		if t, err := time.Parse(l, s); err == nil {
+			return float64(t.UTC().Unix()), nil
+		}
+	}
+	return 0, fmt.Errorf("valeur temporelle invalide %q (nombre ou date ISO 8601 attendu)", s)
+}
 
 // QueryParams rassemble les paramètres d'une requête « query » (à la manière de
 // pygeoapi XarrayProvider.query) : sélection de champs, emprise, sous-ensembles
@@ -200,18 +229,21 @@ func parseSubsets(s string) ([]Subset, error) {
 		axis := strings.TrimSpace(expr[:open])
 		inner := expr[open+1 : len(expr)-1]
 		sub := Subset{Axis: axis}
+		// Séparateur de plage lo:hi. Les dates seules ISO (« 2020-01-01 ») sont
+		// acceptées ; pour un datetime complet (avec heure « hh:mm:ss »), utiliser
+		// plutôt le paramètre datetime, dont le séparateur « / » n'est pas ambigu.
 		if i := strings.IndexByte(inner, ':'); i >= 0 {
-			lo, err := strconv.ParseFloat(strings.TrimSpace(inner[:i]), 64)
+			lo, err := parseTimeOrFloat(inner[:i])
 			if err != nil {
 				return nil, fmt.Errorf("subset %q: borne basse: %w", axis, err)
 			}
-			hi, err := strconv.ParseFloat(strings.TrimSpace(inner[i+1:]), 64)
+			hi, err := parseTimeOrFloat(inner[i+1:])
 			if err != nil {
 				return nil, fmt.Errorf("subset %q: borne haute: %w", axis, err)
 			}
 			sub.Lo, sub.Hi = lo, hi
 		} else {
-			v, err := strconv.ParseFloat(strings.TrimSpace(inner), 64)
+			v, err := parseTimeOrFloat(inner)
 			if err != nil {
 				return nil, fmt.Errorf("subset %q: valeur: %w", axis, err)
 			}
@@ -233,21 +265,21 @@ func parseDatetime(s string, ext [2]float64) (*[2]float64, error) {
 	if i := strings.IndexByte(s, '/'); i >= 0 {
 		a, b := strings.TrimSpace(s[:i]), strings.TrimSpace(s[i+1:])
 		if a != "" && a != ".." {
-			v, err := strconv.ParseFloat(a, 64)
+			v, err := parseTimeOrFloat(a)
 			if err != nil {
 				return nil, fmt.Errorf("datetime borne basse: %w", err)
 			}
 			lo = v
 		}
 		if b != "" && b != ".." {
-			v, err := strconv.ParseFloat(b, 64)
+			v, err := parseTimeOrFloat(b)
 			if err != nil {
 				return nil, fmt.Errorf("datetime borne haute: %w", err)
 			}
 			hi = v
 		}
 	} else {
-		v, err := strconv.ParseFloat(s, 64)
+		v, err := parseTimeOrFloat(s)
 		if err != nil {
 			return nil, fmt.Errorf("datetime: %w", err)
 		}

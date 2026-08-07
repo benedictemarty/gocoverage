@@ -50,6 +50,11 @@ Paramètres de `coverage` : `properties=t2m,uwind`, `bbox=minx,miny,maxx,maxy`,
 `subset=Lat(43:45),Long(0:2)`, `datetime=lo/hi`.
 Paramètres de `position`/`cube` : `parameter-name=…`, `datetime=…`.
 
+`datetime` accepte l'**ISO 8601** (`2020-01-01`, `2020-01-01T06:00:00Z`,
+intervalles `a/b`, bornes ouvertes `..`) ou des valeurs numériques (epoch). L'axe
+temporel du CoverageJSON ressort en ISO 8601 quand les temps sont des secondes
+epoch.
+
 ### Exemples
 
 ```bash

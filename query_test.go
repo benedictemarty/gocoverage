@@ -96,6 +96,56 @@ func TestParseSubsets(t *testing.T) {
 	}
 }
 
+func TestParseDatetimeISO(t *testing.T) {
+	ext := [2]float64{0, 4.1e9}
+	// Intervalle ISO 8601 -> epoch.
+	got, err := parseDatetime("2020-01-01/2020-01-02", ext)
+	if err != nil || got == nil {
+		t.Fatalf("got=%v err=%v", got, err)
+	}
+	// 2020-01-01T00:00:00Z = 1577836800 ; +1 jour = +86400.
+	if got[0] != 1577836800 || got[1]-got[0] != 86400 {
+		t.Errorf("intervalle ISO = %v", *got)
+	}
+	// Instant ISO avec heure.
+	got, err = parseDatetime("2020-01-01T06:00:00Z", ext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[0] != 1577858400 || got[1] != got[0] {
+		t.Errorf("instant ISO = %v", *got)
+	}
+	// Borne ouverte + date.
+	got, _ = parseDatetime("../2020-01-01", ext)
+	if got[0] != 0 || got[1] != 1577836800 {
+		t.Errorf("borne ouverte ISO = %v", *got)
+	}
+}
+
+func TestCoverageJSONTimeISO(t *testing.T) {
+	// Collection avec temps en epoch -> l'axe t doit sortir en ISO 8601.
+	coords := map[string][]float64{
+		"time":      {1577836800, 1577923200}, // 2020-01-01, 2020-01-02
+		"latitude":  {45, 44},
+		"longitude": {0, 1},
+	}
+	da, _ := xarray.NewDataArray([]string{"time", "latitude", "longitude"}, []int{2, 2, 2},
+		[]float64{0, 1, 2, 3, 4, 5, 6, 7}, coords, "t2m")
+	da.Variable().SetAttr("units", "K")
+	ds, _ := xarray.NewDataset(map[string]*xarray.DataArray[float64]{"t2m": da})
+	c := &Collection{ID: "x", XDim: "longitude", YDim: "latitude", TDim: "time", Data: ds}
+	b, err := c.CoverageJSON(ds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]interface{}
+	json.Unmarshal(b, &doc)
+	tvals := doc["domain"].(map[string]interface{})["axes"].(map[string]interface{})["t"].(map[string]interface{})["values"].([]interface{})
+	if tvals[0].(string) != "2020-01-01T00:00:00Z" {
+		t.Errorf("axe t[0] = %v, attendu ISO 2020-01-01T00:00:00Z", tvals[0])
+	}
+}
+
 func TestParseDatetime(t *testing.T) {
 	ext := [2]float64{0, 10}
 	got, err := parseDatetime("2/5", ext)

@@ -5,6 +5,18 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.8.0] - 2026-08-07
+
+### Sprint « parité pygeoapi #7 » — sortie native Zarr (ZIP)
+
+- **`f=zarr`** : export du sous-cube en **archive ZIP d'un répertoire `.zarr`**
+  (via `xarray.WriteDatasetZarr`), `Content-Type: application/zip` — pendant Go de
+  `_get_zarr_data` de pygeoapi. Complète `f=netcdf` (0.7.0).
+- Correction d'une affirmation erronée des notes précédentes : xarray-go **possède
+  bien** un writer Zarr (`WriteDatasetZarr`) ; la sortie Zarr est donc disponible.
+- Test `TestCoverageFormatZarr` : requête `f=zarr` → dézip → relecture via
+  `ReadDatasetZarr` (round-trip complet).
+
 ## [0.7.0] - 2026-08-07
 
 ### Sprint « parité pygeoapi #6 » — format de sortie natif (netCDF)

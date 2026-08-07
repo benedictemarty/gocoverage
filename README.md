@@ -56,9 +56,10 @@ intervalles `a/b`, bornes ouvertes `..`) ou des valeurs numériques (epoch). L'a
 temporel du CoverageJSON ressort en ISO 8601 quand les temps sont des secondes
 epoch.
 
-**Format de sortie** (`f=`) : `json` (CoverageJSON, défaut) ou `netcdf`/`nc`
-(export netCDF natif via `xarray.WriteNetCDF`). Ex.
-`.../coverage?bbox=1,42,4,45&f=netcdf`. `zarr` n'est pas disponible en sortie.
+**Format de sortie** (`f=`) : `json` (CoverageJSON, défaut), `netcdf`/`nc`
+(netCDF natif via `xarray.WriteNetCDF`) ou `zarr` (archive ZIP du `.zarr` via
+`xarray.WriteDatasetZarr`, comme `_get_zarr_data` de pygeoapi). Ex.
+`.../coverage?bbox=1,42,4,45&f=netcdf`.
 
 ### Exemples
 
@@ -124,8 +125,8 @@ formats binaires via un convertisseur.
 - CRS84 uniquement.
 - Une variable sans `units` est conservée (unité vide) — divergence assumée avec
   pygeoapi qui l'ignore.
-- Sortie native **netCDF** (`f=netcdf`) disponible ; **zarr** en sortie non
-  disponible (pas d'écriture Zarr en xarray-go).
+- Sorties natives disponibles : **netCDF** (`f=netcdf`) et **Zarr** zippé
+  (`f=zarr`).
 - **Axe vertical `z`** : pris en charge en **sélection** EDR (`z=…`, niveau unique
   au plus proche) ; un axe à plusieurs niveaux n'est pas représentable en
   CoverageJSON (sélectionnez un niveau → sinon HTTP 400).

@@ -244,9 +244,17 @@ func (s *Server) writeCoverage(w http.ResponseWriter, r *http.Request, c *Collec
 		w.WriteHeader(200)
 		_, _ = w.Write(buf.Bytes())
 	case "zarr":
-		writeErr(w, 400, "format zarr non disponible en sortie (xarray-go n'a pas d'écriture Zarr)")
+		b, err := zarrZip(ds, c.ID)
+		if err != nil {
+			writeErr(w, 500, "export zarr: "+err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+c.ID+".zarr.zip\"")
+		w.WriteHeader(200)
+		_, _ = w.Write(b)
 	default:
-		writeErr(w, 400, "format inconnu: "+r.URL.Query().Get("f")+" (json|netcdf)")
+		writeErr(w, 400, "format inconnu: "+r.URL.Query().Get("f")+" (json|netcdf|zarr)")
 	}
 }
 

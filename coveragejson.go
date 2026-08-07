@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/bmarty/xarray"
+	"github.com/benedictemarty/xarray"
 )
 
 // ErrSelectLevel signale qu'un export CoverageJSON est impossible tant qu'un

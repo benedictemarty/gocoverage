@@ -3,7 +3,7 @@ package gocoverage
 import (
 	"fmt"
 
-	"github.com/bmarty/xarray"
+	"github.com/benedictemarty/xarray"
 )
 
 // EDRParams rassemble les paramètres communs des requêtes EDR position/cube.

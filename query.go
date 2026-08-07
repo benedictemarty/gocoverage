@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bmarty/xarray"
+	"github.com/benedictemarty/xarray"
 )
 
 // isoLayouts : formats de date/heure ISO 8601 acceptés en entrée pour les axes

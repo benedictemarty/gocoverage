@@ -9,8 +9,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/bmarty/gocoverage"
-	"github.com/bmarty/xarray"
+	"github.com/benedictemarty/gocoverage"
+	"github.com/benedictemarty/xarray"
 )
 
 func main() {

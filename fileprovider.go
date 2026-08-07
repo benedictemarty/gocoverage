@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/bmarty/xarray"
+	"github.com/benedictemarty/xarray"
 )
 
 // LoadNetCDF ouvre un fichier netCDF et construit une Collection — pendant Go de

@@ -10,7 +10,7 @@ package gocoverage
 import (
 	"fmt"
 
-	"github.com/bmarty/xarray"
+	"github.com/benedictemarty/xarray"
 )
 
 // Collection décrit une couverture servie : un Dataset[float64] (une ou

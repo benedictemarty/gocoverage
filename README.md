@@ -32,19 +32,20 @@ GoKoala, GOAF) ; `gocoverage` est une démonstration compacte et autonome.
 
 ## Build & lancer
 
-`gocoverage` dépend de `xarray-go` via une directive `replace` locale
-(`go.mod` : `replace github.com/bmarty/xarray => ../xarray`). Clonez donc les
-deux dépôts côte à côte :
+`gocoverage` dépend de `xarray-go`, résolu directement depuis GitHub (aucune
+directive `replace`). Cloner puis lancer :
 
 ```bash
-git clone https://github.com/benedictemarty/xarray
 git clone https://github.com/benedictemarty/gocoverage
 cd gocoverage
 go run ./cmd/gocoverage      # écoute sur :8080 avec une collection de démo
 ```
 
-> Note : le chemin de module reste `github.com/bmarty/xarray` (historique) ; le
-> `replace` local suffit à construire l'ensemble depuis deux clones voisins.
+Ou installer le binaire de démonstration sans cloner :
+
+```bash
+go install github.com/benedictemarty/gocoverage/cmd/gocoverage@latest
+```
 
 ## Endpoints
 

@@ -1,7 +1,5 @@
-module github.com/bmarty/gocoverage
+module github.com/benedictemarty/gocoverage
 
 go 1.26.5
 
-require github.com/bmarty/xarray v0.0.0
-
-replace github.com/bmarty/xarray => ../xarray
+require github.com/benedictemarty/xarray v0.0.0-20260807203749-a478c1a4f7d9

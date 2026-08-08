@@ -25,6 +25,7 @@ func NewServer(p Provider) *Server { return &Server{prov: p} }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.landing)
+	mux.HandleFunc("/conformance", s.conformance)
 	mux.HandleFunc("/collections", s.collections)
 	mux.HandleFunc("/collections/", s.collectionRoutes)
 	return mux
@@ -50,6 +51,7 @@ func (s *Server) landing(w http.ResponseWriter, r *http.Request) {
 		"description": "Serveur de couvertures reproduisant le provider xarray de pygeoapi",
 		"links": []map[string]string{
 			{"rel": "data", "href": "/collections"},
+			{"rel": "conformance", "href": "/conformance"},
 		},
 	})
 }
@@ -77,6 +79,10 @@ func (s *Server) collectionRoutes(w http.ResponseWriter, r *http.Request) {
 		s.describe(w, r, c)
 	case "coverage":
 		s.coverage(w, r, c)
+	case "coverage/domainset":
+		s.domainset(w, r, c)
+	case "coverage/rangetype":
+		s.rangetype(w, r, c)
 	case "position":
 		s.position(w, r, c)
 	case "cube":
@@ -219,6 +225,8 @@ func (s *Server) describe(w http.ResponseWriter, r *http.Request, c *Collection)
 		"properties": c.Properties(),
 		"links": []map[string]string{
 			{"rel": "coverage", "href": "/collections/" + c.ID + "/coverage"},
+			{"rel": "http://www.opengis.net/def/rel/ogc/1.0/coverage-domainset", "href": "/collections/" + c.ID + "/coverage/domainset"},
+			{"rel": "http://www.opengis.net/def/rel/ogc/1.0/coverage-rangetype", "href": "/collections/" + c.ID + "/coverage/rangetype"},
 			{"rel": "position", "href": "/collections/" + c.ID + "/position"},
 			{"rel": "cube", "href": "/collections/" + c.ID + "/cube"},
 			{"rel": "trajectory", "href": "/collections/" + c.ID + "/trajectory"},
@@ -261,6 +269,19 @@ func (s *Server) coverage(w http.ResponseWriter, r *http.Request, c *Collection)
 	if err != nil {
 		writeErr(w, 400, err.Error())
 		return
+	}
+	// Scaling (classe « scaling » de Coverages) : sous-échantillonnage par
+	// moyennage de blocs (scale-factor global, scale-axes par axe).
+	factors, err := c.parseScaling(q.Get("scale-factor"), q.Get("scale-axes"))
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	if factors != nil {
+		if ds, err = applyScaling(ds, factors); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
 	}
 	s.writeCoverage(w, r, c, ds)
 }

@@ -5,6 +5,31 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.14.0] - 2026-08-08
+
+### Ajouté — OGC API - Coverages (successeur moderne de WCS)
+
+Complète le point d'accès `/coverage` existant pour couvrir OGC API - Coverages
+(l'API OpenAPI qui remplace WCS ; le CRS est **décrit**, jamais reprojeté).
+
+- **`GET /conformance`** : déclaration des classes de conformité
+  (`ogcapi-coverages-1` : core, coverage, coverage-subset, -bbox, -datetime,
+  -rangesubset, -scaling, -domainset, -rangetype, covjson/netcdf/zarr). Lien
+  ajouté à la landing page.
+- **`GET /collections/{id}/coverage/domainset`** : description du domaine (CIS 1.1
+  `GeneralGridCoverage`) — axes réguliers `x`/`y` (bornes + résolution), axes
+  irréguliers `z`/`t` (coordonnées), `gridLimits` en index. Pendant du DomainSet
+  de WCS `DescribeCoverage`. `Collection.DomainSet`.
+- **`GET /collections/{id}/coverage/rangetype`** : description des champs (SWE
+  Common `DataRecord` : `Quantity` par champ, `uom`). Pendant du RangeType de
+  WCS. `Collection.RangeType`. Liens ajoutés à la description de collection.
+- **Scaling** (classe « scaling ») sur `/coverage` : `scale-factor` (global x/y)
+  et `scale-axes=Axe(n),…` (par axe) — **sous-échantillonnage par moyennage de
+  blocs** (`Coarsen().Mean()`, agrégation « average » de WCS). `parseScaling`,
+  `applyScaling`.
+- Tests : `TestConformance`, `TestLandingConformanceLink`, `TestDomainSet`,
+  `TestRangeType`, `TestCoverageScaling`, `TestScaleAxes`, `TestScaleFactorInvalid`.
+
 ## [0.13.0] - 2026-08-08
 
 ### Ajouté — EDR `corridor`

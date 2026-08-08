@@ -24,6 +24,18 @@ func metersPerDegree(lat float64) (mLon, mLat float64) {
 	return metersPerDegLon * math.Cos(lat*math.Pi/180), metersPerDegLat
 }
 
+// degMargins renvoie les marges (degrés) de longitude et de latitude couvrant
+// une distance `meters` autour de la latitude de référence refLat. La marge de
+// longitude tient compte du resserrement des méridiens (÷ cos(lat)) — sans quoi
+// la bbox de pré-filtrage sous-couvre la longitude à haute latitude (remarque K).
+func degMargins(meters, refLat float64) (mLon, mLat float64) {
+	cos := math.Cos(refLat * math.Pi / 180)
+	if cos < 0.01 { // près des pôles : éviter la division par ~0
+		cos = 0.01
+	}
+	return meters / (metersPerDegLon * cos), meters / metersPerDegLat
+}
+
 // distMeters renvoie la distance (mètres) entre deux points proches (lon/lat, °).
 func distMeters(lon1, lat1, lon2, lat2 float64) float64 {
 	mLon, mLat := metersPerDegree((lat1 + lat2) / 2)

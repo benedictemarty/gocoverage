@@ -37,7 +37,39 @@ func conformanceClasses() []string {
 		"http://www.opengis.net/spec/ogcapi-coverages-1/1.0/conf/covjson",
 		"http://www.opengis.net/spec/ogcapi-coverages-1/1.0/conf/netcdf",
 		"http://www.opengis.net/spec/ogcapi-coverages-1/1.0/conf/zarr",
+		"http://www.opengis.net/spec/ogcapi-coverages-1/1.0/conf/oas30",
+		"http://www.opengis.net/spec/ogcapi-edr-1/1.1/conf/core",
 	}
+}
+
+// openapi : GET /api — description OpenAPI 3.0 minimale du service (classe
+// oas30). Squelette (pas une spec exhaustive) : suffit à annoncer les chemins
+// principaux et leur négociation de contenu.
+func (s *Server) openapi(w http.ResponseWriter, r *http.Request) {
+	path := func(desc string) map[string]interface{} {
+		return map[string]interface{}{"get": map[string]interface{}{
+			"description": desc,
+			"responses":   map[string]interface{}{"200": map[string]string{"description": "OK"}},
+		}}
+	}
+	doc := map[string]interface{}{
+		"openapi": "3.0.3",
+		"info": map[string]interface{}{
+			"title":       "gocoverage — OGC API Coverages / EDR",
+			"version":     "0.20.0",
+			"description": "Serveur de couvertures (xarray-go) : OGC API - Coverages + EDR.",
+		},
+		"paths": map[string]interface{}{
+			"/collections":                         path("Liste des collections"),
+			"/collections/{collectionId}":          path("Description d'une collection (extent, data_queries)"),
+			"/collections/{collectionId}/coverage": path("Récupération de la couverture (bbox, subset, datetime, scale-*, f)"),
+			"/collections/{collectionId}/position": path("Requête EDR position"),
+			"/collections/{collectionId}/area":     path("Requête EDR area (polygone, trous)"),
+			"/collections/{collectionId}/cube":     path("Requête EDR cube"),
+			"/conformance":                         path("Classes de conformité"),
+		},
+	}
+	writeJSON(w, 200, doc)
 }
 
 // conformance : GET /conformance (OGC API - Common).
@@ -200,10 +232,11 @@ func (s *Server) rangetype(w http.ResponseWriter, r *http.Request, c *Collection
 // Scaling — sous-échantillonnage (classe « scaling » de WCS/Coverages).
 // -----------------------------------------------------------------------------
 
-// parseScaling lit les paramètres scale-factor et scale-axes et renvoie un
-// facteur entier (≥ 1) par dimension résolue. scale-factor s'applique aux axes
-// x et y ; scale-axes(Axis(n),…) le raffine par axe. Renvoie nil si aucun.
-func (c *Collection) parseScaling(scaleFactor, scaleAxes string) (map[string]int, error) {
+// parseScaling lit scale-factor, scale-axes et scale-size et renvoie un facteur
+// entier (≥ 1) par dimension résolue. scale-factor s'applique aux axes x et y ;
+// scale-axes(Axe(n),…) fixe un facteur par axe ; scale-size(Axe(n),…) fixe une
+// taille cible (converti en facteur ≈ taille_source/cible). Renvoie nil si aucun.
+func (c *Collection) parseScaling(scaleFactor, scaleAxes, scaleSize string) (map[string]int, error) {
 	factors := map[string]int{}
 	if s := strings.TrimSpace(scaleFactor); s != "" {
 		n, err := strconv.Atoi(s)
@@ -215,32 +248,53 @@ func (c *Collection) parseScaling(scaleFactor, scaleAxes string) (map[string]int
 			factors[c.YDim] = n
 		}
 	}
-	if s := strings.TrimSpace(scaleAxes); s != "" {
-		for _, expr := range splitTopLevel(s, ',') {
-			expr = strings.TrimSpace(expr)
-			open := strings.IndexByte(expr, '(')
-			if open < 0 || !strings.HasSuffix(expr, ")") {
-				return nil, fmt.Errorf("scale-axes invalide %q (attendu Axe(n))", expr)
-			}
-			dim, err := c.resolveAxis(strings.TrimSpace(expr[:open]))
-			if err != nil {
-				return nil, err
-			}
-			n, err := strconv.Atoi(strings.TrimSpace(expr[open+1 : len(expr)-1]))
-			if err != nil || n < 1 {
-				return nil, fmt.Errorf("scale-axes %q: facteur entier ≥ 1 attendu", expr)
-			}
-			if n > 1 {
-				factors[dim] = n
-			} else {
-				delete(factors, dim)
-			}
-		}
+	if err := c.parseAxisFactors(scaleAxes, "scale-axes", factors, false); err != nil {
+		return nil, err
+	}
+	if err := c.parseAxisFactors(scaleSize, "scale-size", factors, true); err != nil {
+		return nil, err
 	}
 	if len(factors) == 0 {
 		return nil, nil
 	}
 	return factors, nil
+}
+
+// parseAxisFactors analyse une liste Axe(n),… . Si asSize, n est une taille cible
+// convertie en facteur (taille_source ÷ cible) ; sinon n est le facteur direct.
+func (c *Collection) parseAxisFactors(spec, label string, factors map[string]int, asSize bool) error {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return nil
+	}
+	for _, expr := range splitTopLevel(spec, ',') {
+		expr = strings.TrimSpace(expr)
+		open := strings.IndexByte(expr, '(')
+		if open < 0 || !strings.HasSuffix(expr, ")") {
+			return fmt.Errorf("%s invalide %q (attendu Axe(n))", label, expr)
+		}
+		dim, err := c.resolveAxis(strings.TrimSpace(expr[:open]))
+		if err != nil {
+			return err
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(expr[open+1 : len(expr)-1]))
+		if err != nil || n < 1 {
+			return fmt.Errorf("%s %q: entier ≥ 1 attendu", label, expr)
+		}
+		factor := n
+		if asSize {
+			factor = 1
+			if src := c.Data.Dims()[dim]; src > n {
+				factor = src / n // taille cible → facteur d'agrégation
+			}
+		}
+		if factor > 1 {
+			factors[dim] = factor
+		} else {
+			delete(factors, dim)
+		}
+	}
+	return nil
 }
 
 // applyScaling sous-échantillonne le Dataset en moyennant des blocs de `factor`
@@ -252,6 +306,13 @@ func applyScaling(ds *xarray.Dataset[float64], factors map[string]int) (*xarray.
 		if factor <= 1 {
 			continue
 		}
+		// Pas d'origine, pour recentrer ensuite les coordonnées sur le milieu du
+		// bloc (Coarsen étiquette le bloc par sa borne gauche — remarque M).
+		orig, _ := ds.Coord(dim)
+		step := 0.0
+		if len(orig) >= 2 {
+			step = orig[1] - orig[0]
+		}
 		ds, err = dsMap(ds, dim, func(da *xarray.DataArray[float64]) (*xarray.DataArray[float64], error) {
 			r, err := da.Coarsen(dim, factor)
 			if err != nil {
@@ -262,6 +323,49 @@ func applyScaling(ds *xarray.Dataset[float64], factors map[string]int) (*xarray.
 		if err != nil {
 			return nil, fmt.Errorf("scaling %s: %w", dim, err)
 		}
+		if shift := step * float64(factor-1) / 2; shift != 0 {
+			if ds, err = shiftCoord(ds, dim, shift); err != nil {
+				return nil, fmt.Errorf("scaling %s (recentrage): %w", dim, err)
+			}
+		}
 	}
 	return ds, nil
+}
+
+// shiftCoord reconstruit le Dataset en ajoutant delta à la coordonnée de la
+// dimension dim (recentrage des mailles après agrégation). Les variables sans
+// cette dimension sont inchangées.
+func shiftCoord(ds *xarray.Dataset[float64], dim string, delta float64) (*xarray.Dataset[float64], error) {
+	vars := map[string]*xarray.DataArray[float64]{}
+	for _, name := range ds.VarNames() {
+		da, err := ds.Get(name)
+		if err != nil {
+			return nil, err
+		}
+		if !da.HasDim(dim) {
+			vars[name] = da
+			continue
+		}
+		dims := da.Variable().Dims()
+		coords := map[string][]float64{}
+		for _, d := range dims {
+			cv, err := da.Coord(d)
+			if err != nil {
+				continue
+			}
+			c2 := append([]float64(nil), cv...)
+			if d == dim {
+				for i := range c2 {
+					c2[i] += delta
+				}
+			}
+			coords[d] = c2
+		}
+		nda, err := xarray.NewDataArray(dims, da.Shape(), append([]float64(nil), da.Data()...), coords, name)
+		if err != nil {
+			return nil, err
+		}
+		vars[name] = nda
+	}
+	return xarray.NewDataset(vars)
 }

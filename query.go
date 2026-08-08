@@ -83,11 +83,12 @@ func (c *Collection) Query(q QueryParams) (*xarray.Dataset[float64], error) {
 		}
 	}
 
-	// 2. Emprise spatiale (bbox) sur X et Y.
+	// 2. Emprise spatiale (bbox) sur X et Y. La sélection en X gère le passage
+	//    de l'antiméridien (minX > maxX ⇒ union [minX,180] ∪ [-180,maxX]).
 	if q.BBox != nil {
 		bb := *q.BBox
 		var err error
-		if ds, err = dsSelRange(ds, c.XDim, bb[0], bb[2]); err != nil {
+		if ds, err = selBBoxX(ds, c.XDim, bb[0], bb[2]); err != nil {
 			return nil, fmt.Errorf("bbox X: %w", err)
 		}
 		if ds, err = dsSelRange(ds, c.YDim, bb[1], bb[3]); err != nil {
@@ -189,6 +190,63 @@ func selectVars(ds *xarray.Dataset[float64], names []string) (*xarray.Dataset[fl
 		return ds, nil
 	}
 	return ds.DropVars(drop...)
+}
+
+// selBBoxX sélectionne l'emprise en longitude en gérant l'antiméridien : si
+// minX ≤ maxX, plage simple ; sinon union de [minX, 180] et [-180, maxX]
+// concaténée le long de l'axe X (remarque N). Suppose une convention -180..180.
+func selBBoxX(ds *xarray.Dataset[float64], xDim string, minX, maxX float64) (*xarray.Dataset[float64], error) {
+	if minX <= maxX {
+		return dsSelRange(ds, xDim, minX, maxX)
+	}
+	left, err := dsSelRange(ds, xDim, minX, 180)
+	if err != nil {
+		return nil, err
+	}
+	right, err := dsSelRange(ds, xDim, -180, maxX)
+	if err != nil {
+		return nil, err
+	}
+	ln, rn := coordLen(left, xDim), coordLen(right, xDim)
+	switch {
+	case ln == 0:
+		return right, nil
+	case rn == 0:
+		return left, nil
+	default:
+		return dsConcat(left, right, xDim)
+	}
+}
+
+// coordLen renvoie la longueur de la coordonnée dim (0 si absente).
+func coordLen(ds *xarray.Dataset[float64], dim string) int {
+	if cv, err := ds.Coord(dim); err == nil {
+		return len(cv)
+	}
+	return 0
+}
+
+// dsConcat concatène deux Datasets le long de dim (variables partagées), les
+// autres variables étant reprises de a.
+func dsConcat(a, b *xarray.Dataset[float64], dim string) (*xarray.Dataset[float64], error) {
+	vars := map[string]*xarray.DataArray[float64]{}
+	for _, name := range a.VarNames() {
+		da, err := a.Get(name)
+		if err != nil {
+			return nil, err
+		}
+		db, err := b.Get(name)
+		if err != nil || !da.HasDim(dim) {
+			vars[name] = da
+			continue
+		}
+		m, err := xarray.Concat([]*xarray.DataArray[float64]{da, db}, dim)
+		if err != nil {
+			return nil, err
+		}
+		vars[name] = m
+	}
+	return xarray.NewDataset(vars)
 }
 
 // dsSelRange applique SelRange à chaque variable possédant la dimension dim et

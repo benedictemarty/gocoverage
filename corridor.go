@@ -50,18 +50,22 @@ func (c *Collection) Corridor(line [][2]float64, halfWidth float64, units string
 	if err != nil {
 		return nil, err
 	}
-	// Marge d'emprise en degrés (borne supérieure en métrique).
-	marginDeg := halfWidth
-	if metric {
-		marginDeg = meters / metersPerDegLat
-	}
 	minx, miny := math.Inf(1), math.Inf(1)
 	maxx, maxy := math.Inf(-1), math.Inf(-1)
+	maxAbsLat := 0.0
 	for _, pt := range line {
 		minx, maxx = math.Min(minx, pt[0]), math.Max(maxx, pt[0])
 		miny, maxy = math.Min(miny, pt[1]), math.Max(maxy, pt[1])
+		maxAbsLat = math.Max(maxAbsLat, math.Abs(pt[1]))
 	}
-	bbox := [4]float64{minx - marginDeg, miny - marginDeg, maxx + marginDeg, maxy + marginDeg}
+	// Marges d'emprise séparées lon/lat. En métrique, la marge de longitude est
+	// prise à la latitude la plus extrême de la route (cos minimal → marge
+	// maximale, donc emprise couvrante) — remarque K.
+	marginLon, marginLat := halfWidth, halfWidth
+	if metric {
+		marginLon, marginLat = degMargins(meters, maxAbsLat)
+	}
+	bbox := [4]float64{minx - marginLon, miny - marginLat, maxx + marginLon, maxy + marginLat}
 	ds, err := c.Query(QueryParams{Properties: p.SelectProperties, BBox: &bbox, Datetime: p.Datetime})
 	if err != nil {
 		return nil, err

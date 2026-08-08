@@ -37,6 +37,21 @@ type Collection struct {
 	// successifs 00Z/06Z/12Z), chacune une (sous-)collection à part entière.
 	// Exposées par la requête EDR « instances ». Optionnel.
 	Instances []*Collection
+
+	// TimeEpoch force l'interprétation de l'axe temporel : true = secondes depuis
+	// l'epoch Unix (sortie ISO 8601), false = valeurs numériques brutes. nil =
+	// détection automatique par heuristique (évite les seuils magiques quand le
+	// producteur connaît la nature du temps). Optionnel.
+	TimeEpoch *bool
+}
+
+// timeIsEpoch décide si les valeurs temporelles ts sont des secondes epoch :
+// override explicite (TimeEpoch) sinon heuristique allEpochSeconds.
+func (c *Collection) timeIsEpoch(ts []float64) bool {
+	if c.TimeEpoch != nil {
+		return *c.TimeEpoch
+	}
+	return allEpochSeconds(ts)
 }
 
 // InstanceInfo est la vue « métadonnées » d'une instance.
@@ -78,7 +93,7 @@ func (c *Collection) InstancesFromTime() ([]*Collection, error) {
 	if err != nil || len(ts) == 0 {
 		return nil, fmt.Errorf("gocoverage: axe temporel %q illisible", c.TDim)
 	}
-	iso := allEpochSeconds(ts)
+	iso := c.timeIsEpoch(ts)
 	out := make([]*Collection, 0, len(ts))
 	for i, t := range ts {
 		sub, err := dsMap(c.Data, c.TDim, func(da *xarray.DataArray[float64]) (*xarray.DataArray[float64], error) {

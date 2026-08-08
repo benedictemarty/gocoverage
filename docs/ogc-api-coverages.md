@@ -78,13 +78,26 @@ interpolation.
 - **Négociation** : `Accept` honoré à défaut de `?f=` ; erreurs au format
   d'exception OGC (`{code, description}`).
 - **Distances** `radius`/`corridor` : `deg` = géométrie en espace de coordonnées
-  (cercle en degrés = ellipse au sol) ; `km`/`m` = distance-sol réelle.
+  (cercle en degrés = ellipse au sol) ; `km`/`m` = distance-sol réelle, marge de
+  longitude corrigée par `cos(lat)`.
+
+## Robustesse & géométrie (v0.20)
+
+- **Antiméridien** : `bbox` traversant ±180° géré (union des deux plages).
+- **Polygones à trous** : `area` accepte `POLYGON((ext),(trou),…)`.
+- **CRS84 ≠ EPSG:4326** : 4326 (ordre lat/lon) rejeté sans reprojection.
+- **Scaling** : `scale-factor`, `scale-axes`, `scale-size` (taille cible) ;
+  coordonnées recentrées sur le milieu du bloc.
+- **Garde-fou de taille** : réponse > 8 M cellules refusée (400) — anti-OOM.
+- **`Accept`** non satisfiable → 406 ; **`GET /api`** (squelette OpenAPI, `oas30`).
 
 ## Ce qui n'est pas (encore) couvert
 
-- **Reprojection** (`crs`/`subset-crs` effectifs) : le CRS est décrit, non
-  reprojeté — cohérent avec le reste de gocoverage et avec pygeoapi.
-- **OpenAPI 3.0 servie** (`/api`) : non exposée (les classes `oas30` ne sont pas
-  déclarées).
-- **Scaling par `scale-size`** (taille cible absolue) : seul le facteur (pas
-  entier) est géré ; `scale-size` (nombre de cellules visé) reste à faire.
+- **Reprojection effective** (`crs`/`subset-crs`) : le CRS est décrit, non
+  reprojeté — cohérent avec pygeoapi. Un `crs` non supporté est **rejeté (400)**.
+- **Passage à l'échelle** : données **entièrement en mémoire** (`float64`), pas de
+  lecture chunkée/paresseuse ; le garde-fou de taille **mitige** mais ne résout
+  pas. Sert bien les grilles régionales, pas les cubes de plusieurs Go.
+- **Grilles projetées/curvilinéaires** : seuls des axes 1D lon/lat ; reprojeter
+  en amont (cf. `cmd/geosat`).
+- **OpenAPI exhaustive** : `/api` n'est qu'un squelette (chemins principaux).

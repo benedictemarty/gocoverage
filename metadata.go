@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/benedictemarty/xarray"
 )
 
 // Métadonnées de collection conformes OGC API - Common / EDR : `extent`
@@ -63,6 +65,30 @@ func negotiateFormat(r *http.Request) string {
 	return formatFromAccept(r.Header.Get("Accept"))
 }
 
+// acceptExplicitUnsupported indique qu'un en-tête Accept demande explicitement un
+// type qu'on ne sait pas produire (ni joker `*/*`, ni type connu) → 406.
+func acceptExplicitUnsupported(accept string) bool {
+	accept = strings.ToLower(strings.TrimSpace(accept))
+	if accept == "" || strings.Contains(accept, "*/*") {
+		return false
+	}
+	return formatFromAccept(accept) == ""
+}
+
+// datasetCells renvoie le nombre maximal d'éléments parmi les variables du
+// Dataset (borne de la taille sérialisée).
+func datasetCells(ds *xarray.Dataset[float64]) int {
+	max := 0
+	for _, name := range ds.VarNames() {
+		if da, err := ds.Get(name); err == nil {
+			if n := len(da.Data()); n > max {
+				max = n
+			}
+		}
+	}
+	return max
+}
+
 // crsParamSupported indique si une valeur de paramètre CRS de requête
 // (crs/bbox-crs/subset-crs) est acceptable. gocoverage ne reprojette pas
 // (remarque B) : seul le CRS de stockage de la collection — ou un synonyme de
@@ -77,13 +103,14 @@ func crsParamSupported(c *Collection, val string) bool {
 	if lv == strings.ToLower(c.CRS.id()) {
 		return true
 	}
-	// Synonymes de CRS84 (uniquement si la collection est effectivement en CRS84).
+	// Synonymes de CRS84 uniquement (lon/lat). EPSG:4326 est volontairement exclu :
+	// son ordre d'axes est lat/lon et, sans reprojection, l'accepter inverserait
+	// silencieusement les coordonnées d'un bbox (remarque L). → rejeté (400).
 	if c.CRS.id() == crs84 {
 		switch lv {
 		case strings.ToLower(crs84),
 			"crs84", "ogc:crs84", "urn:ogc:def:crs:ogc:1.3:crs84",
-			"epsg:4326", "urn:ogc:def:crs:epsg::4326",
-			"http://www.opengis.net/def/crs/epsg/0/4326":
+			"http://www.opengis.net/def/crs/ogc/1.3/crs84":
 			return true
 		}
 	}
@@ -122,7 +149,7 @@ func (c *Collection) extentDoc() map[string]interface{} {
 	if tr, ok := c.TimeExtent(); ok {
 		ts, _ := c.Data.Coord(c.TDim)
 		var lo, hi interface{} = tr[0], tr[1]
-		if allEpochSeconds(ts) {
+		if c.timeIsEpoch(ts) {
 			lo = time.Unix(int64(tr[0]), 0).UTC().Format(time.RFC3339)
 			hi = time.Unix(int64(tr[1]), 0).UTC().Format(time.RFC3339)
 		}
@@ -165,17 +192,23 @@ func (c *Collection) dataQueries() map[string]interface{} {
 	}
 	out := map[string]interface{}{}
 	for _, t := range types {
+		vars := map[string]interface{}{
+			"title":                 t + " query",
+			"query_type":            t,
+			"output_formats":        outputFormatLabels(),
+			"default_output_format": "CoverageJSON",
+			"crs_details":           []map[string]string{{"crs": c.CRS.id()}},
+		}
+		// Unités de distance déclarées pour les requêtes à rayon/largeur.
+		if t == "radius" || t == "corridor" {
+			vars["within_units"] = []string{"deg", "km", "m"}
+		}
 		out[t] = map[string]interface{}{
 			"link": map[string]interface{}{
-				"href": base + t,
-				"rel":  "data",
-				"variables": map[string]interface{}{
-					"title":                 t + " query",
-					"query_type":            t,
-					"output_formats":        outputFormatLabels(),
-					"default_output_format": "CoverageJSON",
-					"crs_details":           []map[string]string{{"crs": c.CRS.id()}},
-				},
+				"href":      base + t,
+				"rel":       "data",
+				"templated": true,
+				"variables": vars,
 			},
 		}
 	}

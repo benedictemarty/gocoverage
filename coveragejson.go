@@ -143,7 +143,7 @@ func (c *Collection) CoverageJSON(ds *xarray.Dataset[float64]) ([]byte, error) {
 	if c.TDim != "" {
 		if tv, err := ds.Coord(c.TDim); err == nil && len(tv) > 0 {
 			timeSteps = len(tv)
-			iso := allEpochSeconds(tv)
+			iso := c.timeIsEpoch(tv)
 			vals := make([]interface{}, len(tv))
 			for i, t := range tv {
 				if iso {

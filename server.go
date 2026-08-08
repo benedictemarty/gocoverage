@@ -26,6 +26,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.landing)
 	mux.HandleFunc("/conformance", s.conformance)
+	mux.HandleFunc("/api", s.openapi)
 	mux.HandleFunc("/collections", s.collections)
 	mux.HandleFunc("/collections/", s.collectionRoutes)
 	return mux
@@ -58,6 +59,7 @@ func (s *Server) landing(w http.ResponseWriter, r *http.Request) {
 		"links": []map[string]string{
 			{"rel": "data", "href": "/collections"},
 			{"rel": "conformance", "href": "/conformance"},
+			{"rel": "service-desc", "href": "/api"},
 		},
 	})
 }
@@ -254,7 +256,7 @@ func (s *Server) corridor(w http.ResponseWriter, r *http.Request, c *Collection)
 // Paramètre coords : WKT POLYGON((lon lat, …)). Options : datetime, parameter-name.
 func (s *Server) area(w http.ResponseWriter, r *http.Request, c *Collection) {
 	q := r.URL.Query()
-	ring, err := parsePolygon(q.Get("coords"))
+	rings, err := parsePolygonRings(q.Get("coords"))
 	if err != nil {
 		writeErr(w, 400, "coords invalide: "+err.Error())
 		return
@@ -264,7 +266,7 @@ func (s *Server) area(w http.ResponseWriter, r *http.Request, c *Collection) {
 		writeErr(w, 400, err.Error())
 		return
 	}
-	ds, err := c.Area(ring, EDRParams{SelectProperties: parseList(q.Get("parameter-name")), Datetime: dt})
+	ds, err := c.AreaRings(rings, EDRParams{SelectProperties: parseList(q.Get("parameter-name")), Datetime: dt})
 	if err != nil {
 		writeErr(w, 400, err.Error())
 		return
@@ -383,7 +385,7 @@ func (s *Server) coverage(w http.ResponseWriter, r *http.Request, c *Collection)
 	}
 	// Scaling (classe « scaling » de Coverages) : sous-échantillonnage par
 	// moyennage de blocs (scale-factor global, scale-axes par axe).
-	factors, err := c.parseScaling(q.Get("scale-factor"), q.Get("scale-axes"))
+	factors, err := c.parseScaling(q.Get("scale-factor"), q.Get("scale-axes"), q.Get("scale-size"))
 	if err != nil {
 		writeErr(w, 400, err.Error())
 		return
@@ -487,7 +489,23 @@ func parseZ(s string) (*float64, error) {
 // writeCoverage sérialise un Dataset dans le format demandé par le paramètre
 // `f` — pendant de query(format_=…) de pygeoapi. Défaut : CoverageJSON.
 // Formats : json/covjson (CoverageJSON), netcdf/nc (natif netCDF).
+// maxCoverageCells borne la taille d'une réponse sérialisée en mémoire (remarque
+// Q : sans garde-fou, un GET sur une large emprise charge/duplique tout et peut
+// provoquer un OOM). Au-delà, le client doit restreindre bbox/subset/datetime.
+const maxCoverageCells = 8_000_000
+
 func (s *Server) writeCoverage(w http.ResponseWriter, r *http.Request, c *Collection, ds *xarray.Dataset[float64]) {
+	// Négociation : `?f=` explicite non reconnu, ou `Accept` explicite non
+	// satisfiable → 406/400 plutôt qu'un défaut surprenant (remarque H).
+	if r.URL.Query().Get("f") == "" && acceptExplicitUnsupported(r.Header.Get("Accept")) {
+		writeErr(w, 406, "aucun format supporté dans Accept (json|geojson|netcdf|zarr)")
+		return
+	}
+	// Garde-fou de taille (remarque Q).
+	if n := datasetCells(ds); n > maxCoverageCells {
+		writeErr(w, 400, fmt.Sprintf("réponse trop volumineuse (%d cellules > %d) : restreignez bbox/subset/datetime ou utilisez scale-factor", n, maxCoverageCells))
+		return
+	}
 	switch negotiateFormat(r) {
 	case "", "json", "covjson", "coveragejson":
 		b, err := c.CoverageJSON(ds)

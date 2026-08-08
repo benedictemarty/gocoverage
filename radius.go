@@ -27,12 +27,13 @@ func (c *Collection) Radius(cx, cy, within float64, units string, p EDRParams) (
 	if err != nil {
 		return nil, err
 	}
-	// Rayon en degrés pour l'emprise (bbox) : soit direct, soit converti.
-	radiusDeg := within
+	// Emprise (bbox) de pré-filtrage : marges séparées en longitude/latitude.
+	// En métrique, la marge de longitude est corrigée par cos(lat) (remarque K).
+	marginLon, marginLat := within, within
 	if metric {
-		radiusDeg = meters / metersPerDegLat // borne supérieure (lat ≤ lon en m/deg)
+		marginLon, marginLat = degMargins(meters, cy)
 	}
-	bbox := [4]float64{cx - radiusDeg, cy - radiusDeg, cx + radiusDeg, cy + radiusDeg}
+	bbox := [4]float64{cx - marginLon, cy - marginLat, cx + marginLon, cy + marginLat}
 	ds, err := c.Query(QueryParams{Properties: p.SelectProperties, BBox: &bbox, Datetime: p.Datetime})
 	if err != nil {
 		return nil, err

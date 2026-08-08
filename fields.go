@@ -111,7 +111,7 @@ func (c *Collection) Properties() CoverageProperties {
 		p.TimeSteps = len(ts)
 		p.Axes = append(p.Axes, c.TDim)
 		// Résolution/durée en ISO 8601 uniquement si le temps est en secondes epoch.
-		if allEpochSeconds(ts) {
+		if c.timeIsEpoch(ts) {
 			if len(ts) > 1 {
 				p.TimeResolution = iso8601Duration(ts[1] - ts[0])
 			}

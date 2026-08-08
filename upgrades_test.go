@@ -78,12 +78,17 @@ func TestBBoxCRSUnsupportedRejected(t *testing.T) {
 
 func TestBBoxCRSSynonymAccepted(t *testing.T) {
 	srv := NewServer(demoProvider(t))
-	// CRS84 (et ses synonymes) doit être accepté sur une collection CRS84.
-	for _, crs := range []string{"CRS84", "http://www.opengis.net/def/crs/OGC/1.3/CRS84", "EPSG:4326"} {
+	// Synonymes CRS84 (lon/lat) acceptés.
+	for _, crs := range []string{"CRS84", "http://www.opengis.net/def/crs/OGC/1.3/CRS84"} {
 		rec := doGET(t, srv, "/collections/demo/coverage?bbox=0,43,3,45&bbox-crs="+crs)
 		if rec.Code != 200 {
 			t.Errorf("crs=%q: code=%d, attendu 200 (synonyme CRS84)", crs, rec.Code)
 		}
+	}
+	// EPSG:4326 (ordre lat/lon) volontairement rejeté sans reprojection (remarque L).
+	rec := doGET(t, srv, "/collections/demo/coverage?bbox=0,43,3,45&bbox-crs=EPSG:4326")
+	if rec.Code != 400 {
+		t.Errorf("EPSG:4326: code=%d, attendu 400 (ordre d'axes ≠ CRS84)", rec.Code)
 	}
 }
 
@@ -219,6 +224,184 @@ func TestFieldIntegerType(t *testing.T) {
 	c := &Collection{ID: "f", XDim: "longitude", YDim: "latitude", Data: ds}
 	if c.Fields()[0].Type != "integer" {
 		t.Errorf("Type=%q, attendu integer (dtype=int32)", c.Fields()[0].Type)
+	}
+}
+
+// --- Remarque N : bbox traversant l'antiméridien (±180°) ---
+
+func TestAntimeridianBBox(t *testing.T) {
+	coords := map[string][]float64{"latitude": {0, 1}, "longitude": {-180, -90, 0, 90, 175}}
+	da, _ := xarray.NewDataArray([]string{"latitude", "longitude"}, []int{2, 5},
+		[]float64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, coords, "t2m")
+	da.Variable().SetAttr("units", "K")
+	ds, _ := xarray.NewDataset(map[string]*xarray.DataArray[float64]{"t2m": da})
+	c := &Collection{ID: "am", XDim: "longitude", YDim: "latitude", Data: ds}
+	// bbox de 170°E à -170°E (traverse 180°) : doit retenir 175 et -180.
+	out, err := c.Query(QueryParams{BBox: &[4]float64{170, -1, -170, 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	xs, _ := out.Coord("longitude")
+	if len(xs) != 2 {
+		t.Fatalf("longitudes=%v, attendu 2 (175 et -180)", xs)
+	}
+	got := map[float64]bool{xs[0]: true, xs[1]: true}
+	if !got[175] || !got[-180] {
+		t.Errorf("longitudes=%v, attendu {175, -180}", xs)
+	}
+}
+
+// --- Remarque O : polygone à trou ---
+
+func TestAreaWithHole(t *testing.T) {
+	coords := map[string][]float64{"latitude": {0, 1, 2, 3, 4}, "longitude": {0, 1, 2, 3, 4}}
+	data := make([]float64, 25)
+	for i := range data {
+		data[i] = float64(i)
+	}
+	da, _ := xarray.NewDataArray([]string{"latitude", "longitude"}, []int{5, 5}, data, coords, "t2m")
+	da.Variable().SetAttr("units", "K")
+	ds, _ := xarray.NewDataset(map[string]*xarray.DataArray[float64]{"t2m": da})
+	c := &Collection{ID: "h", XDim: "longitude", YDim: "latitude", Data: ds}
+
+	rings, err := parsePolygonRings("POLYGON((0 0, 4 0, 4 4, 0 4, 0 0),(1 1, 3 1, 3 3, 1 3, 1 1))")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rings) != 2 {
+		t.Fatalf("anneaux=%d, attendu 2 (extérieur + trou)", len(rings))
+	}
+	out, err := c.AreaRings(rings, EDRParams{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, _ := out.Get("t2m")
+	xs, _ := out.Coord("longitude")
+	ys, _ := out.Coord("latitude")
+	// Cellule centrale (2,2) : dans le trou → NaN. Coin (0,0) : conservé.
+	ix2, iy2 := indexOf2(xs, 2), indexOf2(ys, 2)
+	ix0, iy0 := indexOf2(xs, 0), indexOf2(ys, 0)
+	st := cStrides(v.Shape())
+	if !mathIsNaN(v.Data()[iy2*st[0]+ix2*st[1]]) {
+		t.Errorf("cellule (2,2) dans le trou devrait être NaN")
+	}
+	if mathIsNaN(v.Data()[iy0*st[0]+ix0*st[1]]) {
+		t.Errorf("cellule (0,0) hors trou devrait être conservée")
+	}
+}
+
+func indexOf2(s []float64, v float64) int {
+	for i, x := range s {
+		if x == v {
+			return i
+		}
+	}
+	return -1
+}
+
+func mathIsNaN(f float64) bool { return f != f }
+
+// --- Remarque K : marge de longitude corrigée par cos(lat) ---
+
+func TestDegMarginsHighLatitude(t *testing.T) {
+	// À 60°, 1° de longitude ≈ 55 km : la marge lon doit être ~2× la marge lat.
+	mLon, mLat := degMargins(111320, 60)
+	if mLon < mLat*1.9 {
+		t.Errorf("mLon=%.4f mLat=%.4f : marge longitude insuffisante à 60° (remarque K)", mLon, mLat)
+	}
+}
+
+// --- Remarque M : scaling recentre les coordonnées sur le milieu du bloc ---
+
+func TestScalingRecenter(t *testing.T) {
+	srv := NewServer(demoProvider(t)) // longitude {0,1,2,3}
+	rec := doGET(t, srv, "/collections/demo/coverage?scale-factor=2")
+	if rec.Code != 200 {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var doc map[string]interface{}
+	json.Unmarshal(rec.Body.Bytes(), &doc)
+	x := doc["domain"].(map[string]interface{})["axes"].(map[string]interface{})["x"].(map[string]interface{})
+	// Bloc {0,1} → centre 0.5 (et non 0, borne gauche).
+	if start, _ := x["start"].(float64); start != 0.5 {
+		t.Errorf("x.start=%v, attendu 0.5 (centre de bloc, pas borne gauche)", x["start"])
+	}
+}
+
+// --- Remarque Q : garde-fou de taille de réponse ---
+
+func TestDatasetCellsCount(t *testing.T) {
+	c, _ := demoProvider(t).Get("demo")
+	if got := datasetCells(c.Data); got != 12 { // 3×4
+		t.Errorf("datasetCells=%d, attendu 12", got)
+	}
+}
+
+// --- Remarque H : Accept non satisfiable → 406 ---
+
+func TestAcceptUnsupported406(t *testing.T) {
+	srv := NewServer(demoProvider(t))
+	req := httptest.NewRequest("GET", "/collections/demo/coverage", nil)
+	req.Header.Set("Accept", "text/html")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != 406 {
+		t.Errorf("code=%d, attendu 406 (Accept: text/html non supporté)", rec.Code)
+	}
+}
+
+// --- scale-size : taille cible absolue ---
+
+func TestScaleSize(t *testing.T) {
+	srv := NewServer(demoProvider(t)) // longitude {0,1,2,3} → 4 cellules
+	rec := doGET(t, srv, "/collections/demo/coverage?scale-size=Long(2)")
+	if rec.Code != 200 {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var doc map[string]interface{}
+	json.Unmarshal(rec.Body.Bytes(), &doc)
+	x := doc["domain"].(map[string]interface{})["axes"].(map[string]interface{})["x"].(map[string]interface{})
+	if int(x["num"].(float64)) != 2 {
+		t.Errorf("x.num=%v, attendu 2 (scale-size Long(2))", x["num"])
+	}
+}
+
+// --- /api (oas30) ---
+
+func TestOpenAPI(t *testing.T) {
+	srv := NewServer(demoProvider(t))
+	rec := doGET(t, srv, "/api")
+	if rec.Code != 200 {
+		t.Fatalf("code=%d", rec.Code)
+	}
+	var doc map[string]interface{}
+	json.Unmarshal(rec.Body.Bytes(), &doc)
+	if doc["openapi"] == nil || doc["paths"] == nil {
+		t.Errorf("document OpenAPI incomplet: %v", doc)
+	}
+	// La classe oas30 doit être déclarée.
+	crec := doGET(t, srv, "/conformance")
+	if !strings.Contains(crec.Body.String(), "oas30") {
+		t.Errorf("classe oas30 absente de /conformance")
+	}
+}
+
+// --- Override d'interprétation du temps (fragilité epoch) ---
+
+func TestTimeEpochOverride(t *testing.T) {
+	ts := []float64{0, 1, 2} // petits entiers : heuristique → non-epoch
+	yes, no := true, false
+	c := &Collection{TimeEpoch: &yes}
+	if !c.timeIsEpoch(ts) {
+		t.Errorf("override true ignoré")
+	}
+	c = &Collection{TimeEpoch: &no}
+	if c.timeIsEpoch([]float64{1e9, 1e9 + 3600}) { // grands : heuristique → epoch
+		t.Errorf("override false ignoré")
+	}
+	c = &Collection{} // auto
+	if c.timeIsEpoch(ts) {
+		t.Errorf("auto: petits entiers ne sont pas de l'epoch")
 	}
 }
 

@@ -5,6 +5,50 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.20.0] - 2026-08-08
+
+### Corrigé / durci — 2ᵉ passe de revue (remarques K–R + conformance)
+
+Traitement des remarques de la revue de l'état durci (bugs d'exactitude
+géodésique/numérique, robustesse et conformance résiduelle).
+
+- **(K) `radius`/`corridor` métrique — marge de longitude** : l'emprise de
+  pré-filtrage utilise désormais des marges séparées lon/lat, la longitude
+  corrigée par `cos(lat)` (`degMargins`). Corrige la sous-couverture de la
+  longitude à haute latitude (des cellules dans le rayon étaient écartées).
+- **(L) CRS84 ≠ EPSG:4326** : `EPSG:4326` (ordre lat/lon) n'est plus accepté
+  comme synonyme de CRS84 (lon/lat) — sans reprojection, l'accepter inversait
+  les axes d'un `bbox`. → rejeté (400).
+- **(M) Scaling recentré** : après `Coarsen().Mean()`, les coordonnées sont
+  ramenées au **centre du bloc** (et non à sa borne gauche) — la grille scalée
+  n'est plus décalée d'½ maille (`shiftCoord`).
+- **(N) Antiméridien** : un `bbox` traversant ±180° (`minX > maxX`) sélectionne
+  l'union `[minX,180] ∪ [-180,maxX]`, concaténée le long de X (`selBBoxX`,
+  `dsConcat`).
+- **(O) Polygones à trous** : `area` accepte les anneaux intérieurs
+  (`POLYGON((ext),(trou),…)`) — inclusion = dans l'extérieur et dans aucun trou
+  (`parsePolygonRings`, `pointInRings`, `AreaRings`).
+- **(Q) Garde-fou de taille** : une réponse dépassant `maxCoverageCells`
+  (8 M cellules) est refusée (400) au lieu de risquer un OOM — **mitigation** de
+  la limite « tout en mémoire » (P).
+- **(H) Négociation** : `Accept` non satisfiable (ni type connu ni `*/*`) → **406**.
+- **Scaling `scale-size`** : taille cible absolue par axe (`scale-size=Axe(n)`),
+  convertie en facteur d'agrégation.
+- **`data_queries` enrichi** : `within_units` (radius/corridor), `templated`.
+- **`GET /api`** : squelette OpenAPI 3.0 + classes de conformité `oas30` et EDR
+  core déclarées ; liens `service-desc`/`api` ajoutés.
+- **Interprétation du temps** : champ `Collection.TimeEpoch` (override explicite
+  epoch vs numérique) court-circuite l'heuristique à seuils (`timeIsEpoch`).
+- Tests : +9 (K, L, M, N, O, Q, 406, scale-size, /api, epoch) — **94 au total**.
+
+### Limites structurelles restantes (non corrigées — honnêteté)
+
+- **(P) Tout en mémoire `float64`** : pas de lecture paresseuse/chunkée ; chaque
+  requête recopie et sérialise en RAM. Seulement **mitigé** par le garde-fou (Q),
+  pas résolu — refonte nécessaire pour passer à l'échelle (Go de plusieurs Go).
+- **(R) Grilles projetées/curvilinéaires** : seuls des axes 1D lon/lat sont
+  modélisés ; une grille projetée doit être reprojetée en amont. Limite de modèle.
+
 ## [0.19.0] - 2026-08-08
 
 ### Corrigé / durci — mise à niveau de conformité EDR & Coverages

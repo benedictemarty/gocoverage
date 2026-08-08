@@ -30,16 +30,36 @@ func pointInPolygon(x, y float64, ring [][2]float64) bool {
 	return in
 }
 
+// pointInRings teste l'appartenance à un polygone à trous : rings[0] est l'anneau
+// extérieur, les suivants des trous. Le point appartient s'il est dans l'extérieur
+// et dans aucun trou (remarque O).
+func pointInRings(x, y float64, rings [][][2]float64) bool {
+	if len(rings) == 0 || !pointInPolygon(x, y, rings[0]) {
+		return false
+	}
+	for _, hole := range rings[1:] {
+		if pointInPolygon(x, y, hole) {
+			return false
+		}
+	}
+	return true
+}
+
 // Area restreint la collection à l'emprise du polygone ring puis masque (NaN) les
-// cellules hors du polygone. p permet de sélectionner champs/temps.
+// cellules hors du polygone (anneau extérieur seul). p sélectionne champs/temps.
 func (c *Collection) Area(ring [][2]float64, p EDRParams) (*xarray.Dataset[float64], error) {
-	if len(ring) < 3 {
+	return c.AreaRings([][][2]float64{ring}, p)
+}
+
+// AreaRings est la variante à trous d'Area : rings[0] extérieur, suivants trous.
+func (c *Collection) AreaRings(rings [][][2]float64, p EDRParams) (*xarray.Dataset[float64], error) {
+	if len(rings) == 0 || len(rings[0]) < 3 {
 		return nil, fmt.Errorf("area: polygone d'au moins 3 sommets requis")
 	}
-	// Emprise du polygone.
+	// Emprise = anneau extérieur.
 	minx, miny := math.Inf(1), math.Inf(1)
 	maxx, maxy := math.Inf(-1), math.Inf(-1)
-	for _, pt := range ring {
+	for _, pt := range rings[0] {
 		minx, maxx = math.Min(minx, pt[0]), math.Max(maxx, pt[0])
 		miny, maxy = math.Min(miny, pt[1]), math.Max(maxy, pt[1])
 	}
@@ -48,12 +68,7 @@ func (c *Collection) Area(ring [][2]float64, p EDRParams) (*xarray.Dataset[float
 	if err != nil {
 		return nil, err
 	}
-	return maskOutsidePolygon(ds, c.XDim, c.YDim, ring)
-}
-
-// maskOutsidePolygon met à NaN les cellules (x, y) hors du polygone.
-func maskOutsidePolygon(ds *xarray.Dataset[float64], xDim, yDim string, ring [][2]float64) (*xarray.Dataset[float64], error) {
-	return maskDataset(ds, xDim, yDim, func(x, y float64) bool { return pointInPolygon(x, y, ring) })
+	return maskDataset(ds, c.XDim, c.YDim, func(x, y float64) bool { return pointInRings(x, y, rings) })
 }
 
 // maskDataset met à NaN les cellules dont le centre (x, y) ne satisfait pas keep,
@@ -157,4 +172,49 @@ func parsePolygon(s string) ([][2]float64, error) {
 		ring = append(ring, [2]float64{lon, lat})
 	}
 	return ring, nil
+}
+
+// parsePolygonRings analyse un WKT POLYGON((extérieur),(trou1),…) et renvoie
+// tous ses anneaux (le premier extérieur, les suivants trous). Pour un polygone
+// simple (ou le repli « lon,lat;… »), renvoie un unique anneau (remarque O).
+func parsePolygonRings(s string) ([][][2]float64, error) {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(strings.ToUpper(s), "POLYGON") {
+		ring, err := parsePolygon(s) // repli mono-anneau
+		if err != nil {
+			return nil, err
+		}
+		return [][][2]float64{ring}, nil
+	}
+	open := strings.IndexByte(s, '(')
+	if open < 0 || !strings.HasSuffix(s, ")") {
+		return nil, fmt.Errorf("WKT POLYGON mal formé")
+	}
+	inner := s[open+1 : len(s)-1] // « (ext),(trou) »
+	var rings [][][2]float64
+	for _, part := range splitTopLevel(inner, ',') {
+		part = strings.TrimSpace(part)
+		part = strings.TrimPrefix(part, "(")
+		part = strings.TrimSuffix(part, ")")
+		var ring [][2]float64
+		for _, tok := range strings.Split(part, ",") {
+			f := strings.FieldsFunc(strings.TrimSpace(tok), func(r rune) bool { return r == ' ' })
+			if len(f) != 2 {
+				return nil, fmt.Errorf("sommet invalide %q", tok)
+			}
+			lon, e1 := strconv.ParseFloat(f[0], 64)
+			lat, e2 := strconv.ParseFloat(f[1], 64)
+			if e1 != nil || e2 != nil {
+				return nil, fmt.Errorf("coordonnées non numériques dans %q", tok)
+			}
+			ring = append(ring, [2]float64{lon, lat})
+		}
+		if len(ring) >= 3 {
+			rings = append(rings, ring)
+		}
+	}
+	if len(rings) == 0 {
+		return nil, fmt.Errorf("WKT POLYGON sans anneau valide")
+	}
+	return rings, nil
 }

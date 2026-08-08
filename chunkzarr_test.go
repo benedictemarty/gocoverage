@@ -206,6 +206,47 @@ func TestChunkedMetadataStaysLazy(t *testing.T) {
 	}
 }
 
+// TestZarrWindowTransposedAxes : store stocké en [longitude, latitude] (x-major).
+// La sortie doit être canonique [lat, lon] avec les valeurs correctement placées.
+func TestZarrWindowTransposedAxes(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "g")
+	coords := map[string][]float64{"longitude": {0, 1, 2, 3}, "latitude": {4, 3, 2, 1}}
+	d := make([]float64, 16)
+	for lonI := 0; lonI < 4; lonI++ {
+		for latI := 0; latI < 4; latI++ {
+			d[lonI*4+latI] = float64(lonI*4 + latI) // x-major
+		}
+	}
+	da, _ := xarray.NewDataArray([]string{"longitude", "latitude"}, []int{4, 4}, d, coords, "t2m")
+	da.Variable().SetAttr("units", "K")
+	ds, _ := xarray.NewDataset(map[string]*xarray.DataArray[float64]{"t2m": da})
+	if err := xarray.WriteDatasetZarrChunked(dir, ds, map[string]int{"longitude": 2, "latitude": 2}, xarray.ZarrNone); err != nil {
+		t.Fatal(err)
+	}
+	r, err := OpenZarrWindow(dir, "longitude", "latitude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Coin lon∈[0,1], lat∈[3,4] : lonI {0,1}, latI {0,1}.
+	out, err := r.ReadWindow(WindowSel{BBox: &[4]float64{0, 3, 1, 4}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.ChunksRead() != 1 {
+		t.Errorf("ChunksRead=%d, attendu 1", r.ChunksRead())
+	}
+	v, _ := out.Get("t2m")
+	if got := v.Shape(); got[0] != 2 || got[1] != 2 {
+		t.Fatalf("shape=%v, attendu [2 2] canonique [lat,lon]", got)
+	}
+	want := map[float64]bool{0: true, 4: true, 1: true, 5: true}
+	for _, x := range v.Data() {
+		if !want[x] {
+			t.Errorf("valeur inattendue %v (placement transposé incorrect)", x)
+		}
+	}
+}
+
 // writeCube3D écrit un cube [time, lat, lon] 4×4×4 en chunks 1×2×2.
 func writeCube3D(t *testing.T, dir string) {
 	t.Helper()

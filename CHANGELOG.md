@@ -5,6 +5,29 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.26.0] - 2026-08-08
+
+### Ajouté — aperçus multi-résolution (pyramide Zarr)
+
+- **`LoadPyramidZarr`** : sert une collection depuis une pyramide multi-échelles
+  (`xarray.WritePyramidZarr`, niveaux « 0 » plein… « n-1 » grossier). Une requête
+  à **grande emprise** est servie depuis un niveau **grossier** (moins de cellules)
+  plutôt qu'en pleine résolution ; une **petite emprise** reste en niveau fin —
+  avec **élagage par chunks** au sein du niveau choisi. Métadonnées (bbox, champs)
+  exposées à la résolution native (niveau 0), sans matérialiser les données.
+- Choix du niveau par budget de cellules (`pyramidTargetCells`) pour l'emprise
+  demandée (`pyramidReader.chooseLevel`).
+
+### Corrigé — ordre d'axes 2D quelconque dans le lecteur élagué
+
+- Le lecteur accepte désormais les variables 2D stockées en **`[y, x]` ou `[x, y]`**
+  et produit une sortie **canonique `[lat, lon]`** (placement des valeurs correct
+  quel que soit l'ordre de stockage). Corrige la lecture des niveaux de pyramide —
+  que `WritePyramidZarr` écrit en ordre inversé aux niveaux réduits — et gère au
+  passage les stores réels en `[lon, lat]`.
+- Tests : sélection de niveau + service HTTP d'une pyramide (métadonnées/données
+  sans matérialisation) ; placement correct en ordre d'axes transposé.
+
 ## [0.25.0] - 2026-08-08
 
 ### Amélioré — métadonnées d'une collection élaguée entièrement paresseuses

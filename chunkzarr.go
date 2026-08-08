@@ -104,8 +104,8 @@ func OpenZarrWindow(dir, xDim, yDim string) (*ZarrWindowReader, error) {
 	// Variables de données : 2D [yDim, xDim] ou 3D [tDim, yDim, xDim].
 	for _, v := range vars {
 		switch {
-		case len(v.dims) == 2 && v.dims[0] == yDim && v.dims[1] == xDim:
-			r.dataVars = append(r.dataVars, v)
+		case len(v.dims) == 2 && indexOf(v.dims, yDim) >= 0 && indexOf(v.dims, xDim) >= 0:
+			r.dataVars = append(r.dataVars, v) // ordre [y,x] ou [x,y] accepté
 		case len(v.dims) == 3 && v.dims[1] == yDim && v.dims[2] == xDim:
 			if r.tDim == "" {
 				r.tDim = v.dims[0]
@@ -170,39 +170,15 @@ func (r *ZarrWindowReader) Coords() (x, y []float64) {
 // l'appelant peut alors retomber sur LoadZarr (lecture complète). Les axes sont
 // détectés par nom (longitude/lon/x, latitude/lat/y) si xDim/yDim sont vides.
 func LoadChunkedZarr(dir, id, title, xDim, yDim string) (*Collection, error) {
-	xCands := []string{xDim}
-	yCands := []string{yDim}
-	if xDim == "" {
-		xCands = []string{"longitude", "lon", "x"}
-	}
-	if yDim == "" {
-		yCands = []string{"latitude", "lat", "y"}
-	}
 	var r *ZarrWindowReader
-	var lastErr error
-	for _, x := range xCands {
-		for _, y := range yCands {
-			if x == "" || y == "" {
-				continue
-			}
-			if rr, err := OpenZarrWindow(dir, x, y); err == nil {
-				r, xDim, yDim = rr, x, y
-			} else {
-				lastErr = err
-			}
-			if r != nil {
-				break
-			}
-		}
-		if r != nil {
-			break
-		}
+	var err error
+	if xDim != "" && yDim != "" {
+		r, err = OpenZarrWindow(dir, xDim, yDim)
+	} else {
+		r, xDim, yDim, err = openZarrWindowAuto(dir)
 	}
-	if r == nil {
-		if lastErr == nil {
-			lastErr = fmt.Errorf("axes lon/lat introuvables dans %q", dir)
-		}
-		return nil, lastErr
+	if err != nil {
+		return nil, err
 	}
 	c := &Collection{ID: id, Title: title, XDim: xDim, YDim: yDim, TDim: r.TDim(), Window: r.ReadWindow}
 	// Indices de métadonnées : description/domainset/rangetype servis sans jamais
@@ -290,36 +266,43 @@ func (r *ZarrWindowReader) ReadWindow(sel WindowSel) (*xarray.Dataset[float64], 
 	return xarray.NewDataset(out)
 }
 
-// read2D lit la fenêtre [r0,r1)×[c0,c1) d'une variable 2D [y, x].
+// read2D lit la fenêtre (y∈[r0,r1), x∈[c0,c1)) d'une variable 2D, quel que soit
+// l'ordre de stockage des axes ([y,x] ou [x,y]), et renvoie une sortie canonique
+// [yDim, xDim]. Ne lit que les chunks recouvrant la fenêtre.
 func (r *ZarrWindowReader) read2D(v zvarMin, r0, r1, c0, c1 int, yv, xv []float64) (*xarray.DataArray[float64], error) {
-	C := v.meta.Shape[1]
-	cr, cc := v.meta.Chunks[0], v.meta.Chunks[1]
+	yPos, xPos := indexOf(v.dims, r.yDim), indexOf(v.dims, r.xDim)
 	comp, err := compressorID(v.meta.Compressor)
 	if err != nil {
 		return nil, err
 	}
+	S, CH := v.meta.Shape, v.meta.Chunks
+	// Bornes de la fenêtre exprimées dans l'ordre des axes de la variable.
+	var lo, hi [2]int
+	lo[yPos], hi[yPos] = r0, r1
+	lo[xPos], hi[xPos] = c0, c1
 	nr, nc := r1-r0, c1-c0
 	out := nanSlice(nr * nc)
-	for rc := r0 / cr; rc <= (r1-1)/cr; rc++ {
-		for cci := c0 / cc; cci <= (c1-1)/cc; cci++ {
-			block, present, err := r.readChunk(v.name, comp, []int{rc, cci}, cr*cc)
+	for a0 := lo[0] / CH[0]; a0 <= (hi[0]-1)/CH[0]; a0++ {
+		for a1 := lo[1] / CH[1]; a1 <= (hi[1]-1)/CH[1]; a1++ {
+			block, present, err := r.readChunk(v.name, comp, []int{a0, a1}, CH[0]*CH[1])
 			if err != nil {
 				return nil, err
 			}
 			if !present {
 				continue
 			}
-			for li := 0; li < cr; li++ {
-				gr := rc*cr + li
-				if gr < r0 || gr >= r1 {
+			for i0 := 0; i0 < CH[0]; i0++ {
+				g0 := a0*CH[0] + i0
+				if g0 < lo[0] || g0 >= hi[0] || g0 >= S[0] {
 					continue
 				}
-				for lj := 0; lj < cc; lj++ {
-					gc := cci*cc + lj
-					if gc < c0 || gc >= c1 || gc >= C {
+				for i1 := 0; i1 < CH[1]; i1++ {
+					g1 := a1*CH[1] + i1
+					if g1 < lo[1] || g1 >= hi[1] || g1 >= S[1] {
 						continue
 					}
-					out[(gr-r0)*nc+(gc-c0)] = block[li*cc+lj]
+					g := [2]int{g0, g1}
+					out[(g[yPos]-r0)*nc+(g[xPos]-c0)] = block[i0*CH[1]+i1]
 				}
 			}
 		}

@@ -5,6 +5,26 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.21.0] - 2026-08-08
+
+### Ajouté — provider à résidence mémoire bornée (attaque la limite P)
+
+- **`LazyFileProvider`** : Provider chargeant les collections **à la demande**
+  (Get) avec un **cache LRU** borné (`NewLazyFileProvider(maxResident)`). Le
+  nombre de collections servies est découplé de la mémoire résidente : on peut
+  déclarer des centaines de sources (`AddZarr`/`AddNetCDF`) sans toutes les garder
+  en RAM ; les moins récemment utilisées sont évincées (leur Dataset est relâché,
+  les métadonnées conservées). `Resident()` expose l'occupation courante.
+- **Portée & limite (honnêteté)** : gain sur la **résidence** (contrairement à
+  `MemProvider` qui garde tout résident en permanence), **pas** sur le coût
+  unitaire d'une requête — chaque chargement lit le fichier entier. xarray-go
+  offre bien du lazy (`ChunkZarr`, `LazyArray`, réductions hors-mémoire, pyramides
+  `ReadPyramidLevel`) mais **sans sélection paresseuse par label** ; une lecture
+  partielle par bbox reste un chantier ultérieur. Une collection évincée reste
+  valide pour une requête en cours (référence conservée par le handler).
+- Sûr en concurrence (mutex). Tests : éviction LRU, service HTTP de bout en bout
+  via le provider lazy (écriture/lecture Zarr réelle), source inconnue.
+
 ## [0.20.0] - 2026-08-08
 
 ### Corrigé / durci — 2ᵉ passe de revue (remarques K–R + conformance)

@@ -30,6 +30,37 @@ type Collection struct {
 	// la requête EDR « locations ». Clé = identifiant (ex. code OACI), valeur =
 	// {lon, lat}. Optionnel.
 	Locations []NamedLocation
+
+	// Instances : versions temporelles de la collection (ex. runs de modèle
+	// successifs 00Z/06Z/12Z), chacune une (sous-)collection à part entière.
+	// Exposées par la requête EDR « instances ». Optionnel.
+	Instances []*Collection
+}
+
+// InstanceInfo est la vue « métadonnées » d'une instance.
+type InstanceInfo struct {
+	ID    string     `json:"id"`
+	Title string     `json:"title,omitempty"`
+	BBox  [4]float64 `json:"bbox"`
+}
+
+// InstancesInfo liste les métadonnées des instances.
+func (c *Collection) InstancesInfo() []InstanceInfo {
+	out := make([]InstanceInfo, 0, len(c.Instances))
+	for _, in := range c.Instances {
+		out = append(out, InstanceInfo{ID: in.ID, Title: in.Title, BBox: in.BBox()})
+	}
+	return out
+}
+
+// InstanceByID retrouve une instance par identifiant.
+func (c *Collection) InstanceByID(id string) (*Collection, bool) {
+	for _, in := range c.Instances {
+		if in.ID == id {
+			return in, true
+		}
+	}
+	return nil, false
 }
 
 // NamedLocation est un point nommé prédéfini d'une collection (EDR locations).

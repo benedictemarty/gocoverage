@@ -74,6 +74,13 @@ func (s *Server) collectionRoutes(w http.ResponseWriter, r *http.Request) {
 	if len(parts) == 2 {
 		action = strings.Trim(parts[1], "/")
 	}
+	s.dispatchAction(w, r, c, action)
+}
+
+// dispatchAction route une action (chemin après /collections/{id}/) vers le bon
+// handler. Factorisé pour être réutilisé par les instances (mêmes actions sur une
+// sous-collection).
+func (s *Server) dispatchAction(w http.ResponseWriter, r *http.Request, c *Collection, action string) {
 	switch action {
 	case "":
 		s.describe(w, r, c)
@@ -97,13 +104,44 @@ func (s *Server) collectionRoutes(w http.ResponseWriter, r *http.Request) {
 		s.radius(w, r, c)
 	case "locations":
 		s.locations(w, r, c)
+	case "instances":
+		s.instances(w, r, c)
 	default:
-		if strings.HasPrefix(action, "locations/") {
-			s.locationByID(w, r, c, strings.TrimPrefix(action, "locations/"))
+		if rest, ok := strings.CutPrefix(action, "locations/"); ok {
+			s.locationByID(w, r, c, rest)
+			return
+		}
+		if rest, ok := strings.CutPrefix(action, "instances/"); ok {
+			s.instanceRoute(w, r, c, rest)
 			return
 		}
 		writeErr(w, 404, "ressource inconnue: "+action)
 	}
+}
+
+// instances : liste des instances (versions temporelles) d'une collection.
+func (s *Server) instances(w http.ResponseWriter, r *http.Request, c *Collection) {
+	writeJSON(w, 200, map[string]interface{}{"instances": c.InstancesInfo()})
+}
+
+// instanceRoute route /instances/{instId}[/action] vers la sous-collection.
+func (s *Server) instanceRoute(w http.ResponseWriter, r *http.Request, c *Collection, rest string) {
+	parts := strings.SplitN(rest, "/", 2)
+	inst, ok := c.InstanceByID(parts[0])
+	if !ok {
+		writeErr(w, 404, "instance inconnue: "+parts[0])
+		return
+	}
+	sub := ""
+	if len(parts) == 2 {
+		sub = strings.Trim(parts[1], "/")
+	}
+	// Une instance n'a pas d'instances imbriquées.
+	if sub == "instances" || strings.HasPrefix(sub, "instances/") {
+		writeErr(w, 404, "instances imbriquées non prises en charge")
+		return
+	}
+	s.dispatchAction(w, r, inst, sub)
 }
 
 // locations : liste des points nommés de la collection (FeatureCollection GeoJSON).
@@ -313,6 +351,7 @@ func (s *Server) describe(w http.ResponseWriter, r *http.Request, c *Collection)
 			{"rel": "corridor", "href": "/collections/" + c.ID + "/corridor"},
 			{"rel": "radius", "href": "/collections/" + c.ID + "/radius"},
 			{"rel": "locations", "href": "/collections/" + c.ID + "/locations"},
+			{"rel": "instances", "href": "/collections/" + c.ID + "/instances"},
 		},
 	})
 }

@@ -5,6 +5,22 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.17.0] - 2026-08-08
+
+### Ajouté — EDR `instances`
+
+- **Requête EDR `instances`** : versions temporelles d'une collection (ex. runs
+  de modèle successifs 00Z/06Z/12Z). Champ optionnel `Collection.Instances`
+  (`[]*Collection`), chaque instance étant une (sous-)collection complète.
+  - `GET /collections/{id}/instances` → liste des instances (id, titre, bbox).
+  - `GET /collections/{id}/instances/{instanceId}[/…]` → **toutes les requêtes**
+    (describe, coverage, position, cube, trajectory, area, corridor, radius,
+    locations) s'exécutent sur la sous-collection. Instance inconnue → 404 ;
+    instances imbriquées refusées.
+- Refactor : le routage d'action est factorisé (`dispatchAction`) et réutilisé
+  pour les instances. `Collection.InstancesInfo`, `InstanceByID`. Tests : liste,
+  routage d'une requête vers la bonne instance, 404, imbrication.
+
 ## [0.16.0] - 2026-08-08
 
 ### Ajouté — EDR `locations`

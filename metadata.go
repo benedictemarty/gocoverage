@@ -147,7 +147,7 @@ func (c *Collection) extentDoc() map[string]interface{} {
 	}
 	ext := map[string]interface{}{"spatial": spatial}
 	if tr, ok := c.TimeExtent(); ok {
-		ts, _ := c.Data.Coord(c.TDim)
+		ts, _ := c.grid().Coord(c.TDim)
 		var lo, hi interface{} = tr[0], tr[1]
 		if c.timeIsEpoch(ts) {
 			lo = time.Unix(int64(tr[0]), 0).UTC().Format(time.RFC3339)

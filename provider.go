@@ -43,6 +43,24 @@ type Collection struct {
 	// détection automatique par heuristique (évite les seuils magiques quand le
 	// producteur connaît la nature du temps). Optionnel.
 	TimeEpoch *bool
+
+	// Window, si défini, fournit une lecture élaguée par bbox (ne lit que les
+	// chunks nécessaires) — cf. LoadChunkedZarr. Quand il est présent, une requête
+	// à emprise n'a pas besoin de charger toute la grille (Data peut être nil et
+	// n'est matérialisé que pour les accès sans emprise / métadonnées). Optionnel.
+	Window func(bbox *[4]float64) (*xarray.Dataset[float64], error)
+}
+
+// grid renvoie la grille complète : Data si présent, sinon la matérialise via
+// Window(nil) (lecture complète, mise en cache). Utilisé par les accès sans
+// emprise (métadonnées) ; les requêtes à emprise passent par la lecture élaguée.
+func (c *Collection) grid() *xarray.Dataset[float64] {
+	if c.Data == nil && c.Window != nil {
+		if ds, err := c.Window(nil); err == nil {
+			c.Data = ds
+		}
+	}
+	return c.Data
 }
 
 // timeIsEpoch décide si les valeurs temporelles ts sont des secondes epoch :
@@ -89,14 +107,14 @@ func (c *Collection) InstancesFromTime() ([]*Collection, error) {
 	if c.TDim == "" {
 		return nil, fmt.Errorf("gocoverage: la collection %q n'a pas d'axe temporel", c.ID)
 	}
-	ts, err := c.Data.Coord(c.TDim)
+	ts, err := c.grid().Coord(c.TDim)
 	if err != nil || len(ts) == 0 {
 		return nil, fmt.Errorf("gocoverage: axe temporel %q illisible", c.TDim)
 	}
 	iso := c.timeIsEpoch(ts)
 	out := make([]*Collection, 0, len(ts))
 	for i, t := range ts {
-		sub, err := dsMap(c.Data, c.TDim, func(da *xarray.DataArray[float64]) (*xarray.DataArray[float64], error) {
+		sub, err := dsMap(c.grid(), c.TDim, func(da *xarray.DataArray[float64]) (*xarray.DataArray[float64], error) {
 			return da.Isel(c.TDim, i)
 		})
 		if err != nil {
@@ -125,12 +143,12 @@ type NamedLocation struct {
 }
 
 // Params renvoie les noms des paramètres (variables) exposés par la collection.
-func (c *Collection) Params() []string { return c.Data.VarNames() }
+func (c *Collection) Params() []string { return c.grid().VarNames() }
 
 // BBox renvoie l'emprise [minX, minY, maxX, maxY] à partir des coordonnées.
 func (c *Collection) BBox() [4]float64 {
-	xs, _ := c.Data.Coord(c.XDim)
-	ys, _ := c.Data.Coord(c.YDim)
+	xs, _ := c.grid().Coord(c.XDim)
+	ys, _ := c.grid().Coord(c.YDim)
 	return [4]float64{minOf(xs), minOf(ys), maxOf(xs), maxOf(ys)}
 }
 
@@ -140,7 +158,7 @@ func (c *Collection) TimeExtent() ([2]float64, bool) {
 	if c.TDim == "" {
 		return [2]float64{}, false
 	}
-	ts, err := c.Data.Coord(c.TDim)
+	ts, err := c.grid().Coord(c.TDim)
 	if err != nil || len(ts) == 0 {
 		return [2]float64{}, false
 	}
@@ -180,7 +198,17 @@ func NewMemProvider() *MemProvider {
 // Add enregistre une collection. Renvoie une erreur si la collection est
 // invalide (dimensions X/Y/T absentes du Dataset).
 func (p *MemProvider) Add(c *Collection) error {
-	dims := c.Data.Dims()
+	// Collection à lecture élaguée (Data nil + Window) : ses axes ont été validés
+	// à l'ouverture du store ; on ne force pas le chargement complet ici pour
+	// préserver la laziness (élagage par chunks).
+	if c.Data == nil && c.Window != nil {
+		if _, ok := p.colls[c.ID]; !ok {
+			p.order = append(p.order, c.ID)
+		}
+		p.colls[c.ID] = c
+		return nil
+	}
+	dims := c.grid().Dims()
 	if _, ok := dims[c.XDim]; !ok {
 		return fmt.Errorf("gocoverage: dimension X %q absente du Dataset", c.XDim)
 	}

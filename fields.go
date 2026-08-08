@@ -20,10 +20,10 @@ type Field struct {
 // attribut `units`. Comme xarray-go ne porte pas toujours cette métadonnée,
 // gocoverage conserve la variable avec une unité vide plutôt que de la masquer.
 func (c *Collection) Fields() []Field {
-	names := c.Data.VarNames()
+	names := c.grid().VarNames()
 	out := make([]Field, 0, len(names))
 	for _, name := range names {
-		da, err := c.Data.Get(name)
+		da, err := c.grid().Get(name)
 		if err != nil {
 			continue
 		}
@@ -86,8 +86,8 @@ type CoverageProperties struct {
 
 // Properties calcule les propriétés de couverture de la collection.
 func (c *Collection) Properties() CoverageProperties {
-	xs, _ := c.Data.Coord(c.XDim)
-	ys, _ := c.Data.Coord(c.YDim)
+	xs, _ := c.grid().Coord(c.XDim)
+	ys, _ := c.grid().Coord(c.YDim)
 	p := CoverageProperties{
 		BBox:       [4]float64{xs[0], ys[0], xs[len(xs)-1], ys[len(ys)-1]},
 		BBoxCRS:    c.CRS.id(),
@@ -105,7 +105,7 @@ func (c *Collection) Properties() CoverageProperties {
 		p.ResY = absf(ys[1] - ys[0])
 	}
 	if ext, ok := c.TimeExtent(); ok {
-		ts, _ := c.Data.Coord(c.TDim)
+		ts, _ := c.grid().Coord(c.TDim)
 		p.TimeAxis = c.TDim
 		p.TimeRange = &ext
 		p.TimeSteps = len(ts)

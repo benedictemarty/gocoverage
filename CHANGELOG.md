@@ -5,6 +5,32 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.22.0] - 2026-08-08
+
+### Ajouté — lecture Zarr élaguée par chunks (vraie E/S partielle)
+
+- **`ZarrWindowReader` / `OpenZarrWindow`** : lecteur Zarr v2 qui, pour une
+  emprise (bbox), n'ouvre **que les fichiers-chunks recouvrant la fenêtre** — vraie
+  entrée/sortie partielle, sans jamais matérialiser toute la grille. `ReadWindow`
+  assemble la fenêtre ; `ChunksRead()` expose le nombre de chunks lus.
+- **Intégration transparente** : nouveau champ `Collection.Window` ; `Query`
+  emprunte la lecture élaguée quand un `Window` est présent et qu'un bbox est
+  demandé — donc **toutes** les requêtes à emprise (coverage, cube, area, radius,
+  corridor) en bénéficient. Les accès sans emprise (métadonnées) matérialisent la
+  grille à la demande via `grid()` (mis en cache). `MemProvider.Add` préserve la
+  laziness (pas de chargement complet à l'enregistrement).
+- **`LoadChunkedZarr`** : construit une collection à lecture élaguée (détection
+  d'axes lon/lat). Repli explicite : store hors sous-ensemble supporté → erreur,
+  l'appelant retombe sur `LoadZarr` (lecture complète).
+- **Portée & limites (honnêteté)** : xarray-go réalise cet élagage en interne
+  (`zarrRowSource`) mais ne l'expose pas (types non exportés, `ChunkZarr` ne rend
+  qu'un `LazyArray`) et le module est consommé en lecture seule (pas de `replace`)
+  — d'où ce mini-lecteur **borné** : Zarr v2, dtype `<f8`, ordre C, **non
+  compressé**, variables **2D** `[lat, lon]`. Tout écart → erreur/rebasculement.
+  La voie idéale reste d'exposer un constructeur `ChunkSource` dans xarray-go.
+- Tests : élagage prouvé (bbox coin → **1 chunk lu**, complet → 4), requête sans
+  matérialisation de la grille, bout-en-bout HTTP, rejet d'un store compressé.
+
 ## [0.21.0] - 2026-08-08
 
 ### Ajouté — provider à résidence mémoire bornée (attaque la limite P)

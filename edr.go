@@ -34,7 +34,7 @@ func (c *Collection) applyZ(ds *xarray.Dataset[float64], p EDRParams) (*xarray.D
 // plus proche, avec éventuellement une plage temporelle et un sous-ensemble de
 // paramètres. Renvoie un Dataset réduit (grille 1×1 → PointSeries en CoverageJSON).
 func (c *Collection) Position(x, y float64, p EDRParams) (*xarray.Dataset[float64], error) {
-	ds := c.Data
+	ds := c.grid()
 	var err error
 	if len(p.SelectProperties) > 0 {
 		if ds, err = selectVars(ds, p.SelectProperties); err != nil {

@@ -58,9 +58,7 @@ type Subset struct {
 // Query applique les paramètres de requête à la collection et renvoie le
 // Dataset résultant restreint aux champs demandés.
 func (c *Collection) Query(q QueryParams) (*xarray.Dataset[float64], error) {
-	ds := c.Data
-
-	// Exclusivités reproduites de pygeoapi.
+	// Exclusivités reproduites de pygeoapi (évaluées sur le bbox d'origine).
 	subsetDims := map[string]bool{}
 	for _, s := range q.Subsets {
 		if dim, err := c.resolveAxis(s.Axis); err == nil {
@@ -72,6 +70,22 @@ func (c *Collection) Query(q QueryParams) (*xarray.Dataset[float64], error) {
 	}
 	if q.Datetime != nil && c.TDim != "" && subsetDims[c.TDim] {
 		return nil, fmt.Errorf("datetime et subset temporel sont exclusifs")
+	}
+
+	// Base : lecture élaguée par chunks si un Window est disponible et qu'une
+	// emprise est demandée (ne lit que les chunks nécessaires, sans matérialiser
+	// toute la grille) ; sinon la grille complète. On évite d'appeler grid() dans
+	// le cas élagué (sinon la grille complète serait chargée inutilement).
+	var ds *xarray.Dataset[float64]
+	if c.Window != nil && q.BBox != nil {
+		win, err := c.Window(q.BBox)
+		if err != nil {
+			return nil, fmt.Errorf("lecture élaguée: %w", err)
+		}
+		ds = win
+		q.BBox = nil // emprise déjà appliquée par la lecture élaguée
+	} else {
+		ds = c.grid()
 	}
 
 	// 1. Sélection des champs (properties / range-subset).
@@ -148,7 +162,7 @@ func (c *Collection) resolveAxis(name string) (string, error) {
 		}
 		return c.ZDim, nil
 	}
-	for dim := range c.Data.Dims() {
+	for dim := range c.grid().Dims() {
 		if strings.ToLower(dim) == n {
 			return dim, nil
 		}

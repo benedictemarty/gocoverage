@@ -5,6 +5,27 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.24.0] - 2026-08-08
+
+### Ajouté — élagage des cubes temporels 3D `[t, lat, lon]`
+
+- Le lecteur élagué gère désormais les variables **3D `[time, lat, lon]`** en plus
+  du 2D : une requête à emprise **et/ou** plage temporelle ne lit que les chunks
+  recouvrant la fenêtre — **pruning sur les trois axes** (temps, latitude,
+  longitude). Clés de chunk `t.r.c` ; lecture généralisée (`read2D`/`read3D`).
+- **Décodage CF du temps** réutilisé de xarray-go (`DecodeTime`) : l'axe temporel
+  d'un store à unités « <u> since <date> » est décodé en secondes epoch, donc
+  comparable à un `datetime` de requête.
+- **Sélection structurée** : `Collection.Window` prend une `WindowSel{BBox, TRange}`
+  (au lieu d'un simple `*bbox`) ; `Query` bascule sur la lecture élaguée dès qu'un
+  **bbox ou un datetime** est présent, et applique les deux via les chunks.
+- **Requêtes `datetime` paresseuses** : `LoadChunkedZarr` renseigne un indice
+  d'étendue temporelle (`Collection.TExtent`) tiré de l'axe décodé, si bien qu'une
+  requête datetime n'a pas besoin de charger le cube pour connaître l'étendue.
+- Périmètre : Zarr v2, `<f8`, ordre C, none/zlib/zstd, **2D ou 3D** `[t?, lat, lon]`.
+- Tests : élagage 3D temps×espace (bbox coin + 2 pas → **2 chunks lus**), requête
+  `bbox+datetime` via `Collection` sans matérialiser le cube.
+
 ## [0.23.0] - 2026-08-08
 
 ### Ajouté — lecture élaguée des chunks compressés (zlib, zstd)

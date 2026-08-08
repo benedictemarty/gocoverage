@@ -50,12 +50,15 @@ type zvarMin struct {
 
 // ZarrWindowReader lit un groupe Zarr v2 en n'ouvrant que les chunks nécessaires.
 type ZarrWindowReader struct {
-	dir        string
-	xDim, yDim string
-	coords     map[string][]float64
-	dataVars   []zvarMin
-	chunksRead int // nombre de fichiers-chunks lus au dernier ReadWindow (observabilité/tests)
+	dir              string
+	xDim, yDim, tDim string // tDim = "" si pas d'axe temporel (variables 2D)
+	coords           map[string][]float64
+	dataVars         []zvarMin
+	chunksRead       int // nombre de fichiers-chunks lus au dernier ReadWindow (observabilité/tests)
 }
+
+// TDim renvoie le nom de l'axe temporel détecté ("" si variables 2D).
+func (r *ZarrWindowReader) TDim() string { return r.tDim }
 
 // OpenZarrWindow ouvre un groupe Zarr v2 pour lecture élaguée. Lit uniquement les
 // métadonnées et les coordonnées (1D, légères) — pas les données. Renvoie une
@@ -98,17 +101,59 @@ func OpenZarrWindow(dir, xDim, yDim string) (*ZarrWindowReader, error) {
 	if _, ok := r.coords[yDim]; !ok {
 		return nil, fmt.Errorf("coordonnée Y %q absente du store Zarr", yDim)
 	}
-	// Variables de données = 2D portant [yDim, xDim].
+	// Variables de données : 2D [yDim, xDim] ou 3D [tDim, yDim, xDim].
 	for _, v := range vars {
-		if len(v.meta.Shape) == 2 && len(v.dims) == 2 && v.dims[0] == yDim && v.dims[1] == xDim {
+		switch {
+		case len(v.dims) == 2 && v.dims[0] == yDim && v.dims[1] == xDim:
+			r.dataVars = append(r.dataVars, v)
+		case len(v.dims) == 3 && v.dims[1] == yDim && v.dims[2] == xDim:
+			if r.tDim == "" {
+				r.tDim = v.dims[0]
+			} else if r.tDim != v.dims[0] {
+				return nil, fmt.Errorf("axes temporels incohérents (%s vs %s)", r.tDim, v.dims[0])
+			}
 			r.dataVars = append(r.dataVars, v)
 		}
 	}
 	if len(r.dataVars) == 0 {
-		return nil, fmt.Errorf("aucune variable de données 2D [%s, %s] dans le store", yDim, xDim)
+		return nil, fmt.Errorf("aucune variable de données 2D/3D [%s, %s] dans le store", yDim, xDim)
+	}
+	// Axe temporel : décodage CF (« <unité> since <date> ») réutilisé de xarray-go,
+	// pour que les valeurs soient comparables à un datetime (secondes epoch).
+	if r.tDim != "" {
+		if raw, ok := r.coords[r.tDim]; ok {
+			r.coords[r.tDim] = decodeTimeCoord(r.tDim, raw, vars[r.tDim].attrs["units"])
+		} else {
+			return nil, fmt.Errorf("coordonnée temporelle %q absente du store", r.tDim)
+		}
 	}
 	sort.Slice(r.dataVars, func(i, j int) bool { return r.dataVars[i].name < r.dataVars[j].name })
 	return r, nil
+}
+
+// decodeTimeCoord applique le décodage CF du temps (unités « <u> since <date> »)
+// en réutilisant xarray.DecodeTime. Sans unités CF, renvoie les valeurs brutes.
+func decodeTimeCoord(dim string, raw []float64, units string) []float64 {
+	if !strings.Contains(strings.ToLower(units), " since ") {
+		return raw
+	}
+	da, err := xarray.NewDataArray([]string{dim}, []int{len(raw)}, append([]float64(nil), raw...), map[string][]float64{dim: raw}, dim)
+	if err != nil {
+		return raw
+	}
+	da.Variable().SetAttr("units", units)
+	ds, err := xarray.NewDataset(map[string]*xarray.DataArray[float64]{dim: da})
+	if err != nil {
+		return raw
+	}
+	dec, err := xarray.DecodeTime(ds, dim)
+	if err != nil {
+		return raw
+	}
+	if cv, err := dec.Coord(dim); err == nil && len(cv) == len(raw) {
+		return cv
+	}
+	return raw
 }
 
 // Coords renvoie les coordonnées lues (x, y).
@@ -159,36 +204,52 @@ func LoadChunkedZarr(dir, id, title, xDim, yDim string) (*Collection, error) {
 		}
 		return nil, lastErr
 	}
-	return &Collection{ID: id, Title: title, XDim: xDim, YDim: yDim, Window: r.ReadWindow}, nil
+	c := &Collection{ID: id, Title: title, XDim: xDim, YDim: yDim, TDim: r.TDim(), Window: r.ReadWindow}
+	if tv := r.coords[r.tDim]; r.tDim != "" && len(tv) > 0 {
+		c.TExtent = &[2]float64{minOf(tv), maxOf(tv)}
+	}
+	return c, nil
 }
 
 // ChunksRead renvoie le nombre de fichiers-chunks ouverts au dernier ReadWindow.
 func (r *ZarrWindowReader) ChunksRead() int { return r.chunksRead }
 
-// ReadWindow lit la fenêtre correspondant à bbox (nil = tout), en n'ouvrant que
-// les chunks recouvrant les indices retenus, et renvoie un Dataset[float64].
-func (r *ZarrWindowReader) ReadWindow(bbox *[4]float64) (*xarray.Dataset[float64], error) {
+// ReadWindow lit la fenêtre décrite par sel (emprise et/ou plage temporelle ;
+// nil = axe entier), en n'ouvrant que les chunks recouvrant les indices retenus.
+func (r *ZarrWindowReader) ReadWindow(sel WindowSel) (*xarray.Dataset[float64], error) {
 	xv, yv := r.coords[r.xDim], r.coords[r.yDim]
 	c0, c1 := 0, len(xv)
 	r0, r1 := 0, len(yv)
-	if bbox != nil {
-		c0, c1 = indexRange(xv, bbox[0], bbox[2])
-		r0, r1 = indexRange(yv, bbox[1], bbox[3])
+	if sel.BBox != nil {
+		c0, c1 = indexRange(xv, sel.BBox[0], sel.BBox[2])
+		r0, r1 = indexRange(yv, sel.BBox[1], sel.BBox[3])
 	}
 	if c1 <= c0 || r1 <= r0 {
 		return nil, fmt.Errorf("fenêtre vide (bbox hors emprise)")
 	}
+	// Plage temporelle (variables 3D).
+	var tv []float64
+	t0, t1 := 0, 0
+	if r.tDim != "" {
+		tv = r.coords[r.tDim]
+		t0, t1 = 0, len(tv)
+		if sel.TRange != nil {
+			t0, t1 = indexRange(tv, sel.TRange[0], sel.TRange[1])
+		}
+		if t1 <= t0 {
+			return nil, fmt.Errorf("fenêtre temporelle vide")
+		}
+	}
 	r.chunksRead = 0
 	out := map[string]*xarray.DataArray[float64]{}
 	for _, v := range r.dataVars {
-		data, err := r.readVarWindow(v, r0, r1, c0, c1)
-		if err != nil {
-			return nil, err
+		var da *xarray.DataArray[float64]
+		var err error
+		if len(v.dims) == 3 {
+			da, err = r.read3D(v, t0, t1, r0, r1, c0, c1, tv, yv, xv)
+		} else {
+			da, err = r.read2D(v, r0, r1, c0, c1, yv, xv)
 		}
-		da, err := xarray.NewDataArray(
-			[]string{r.yDim, r.xDim}, []int{r1 - r0, c1 - c0}, data,
-			map[string][]float64{r.yDim: append([]float64(nil), yv[r0:r1]...), r.xDim: append([]float64(nil), xv[c0:c1]...)},
-			v.name)
 		if err != nil {
 			return nil, err
 		}
@@ -200,9 +261,8 @@ func (r *ZarrWindowReader) ReadWindow(bbox *[4]float64) (*xarray.Dataset[float64
 	return xarray.NewDataset(out)
 }
 
-// readVarWindow lit les lignes [r0,r1) × colonnes [c0,c1) d'une variable 2D en
-// n'ouvrant que les chunks nécessaires.
-func (r *ZarrWindowReader) readVarWindow(v zvarMin, r0, r1, c0, c1 int) ([]float64, error) {
+// read2D lit la fenêtre [r0,r1)×[c0,c1) d'une variable 2D [y, x].
+func (r *ZarrWindowReader) read2D(v zvarMin, r0, r1, c0, c1 int, yv, xv []float64) (*xarray.DataArray[float64], error) {
 	C := v.meta.Shape[1]
 	cr, cc := v.meta.Chunks[0], v.meta.Chunks[1]
 	comp, err := compressorID(v.meta.Compressor)
@@ -210,20 +270,15 @@ func (r *ZarrWindowReader) readVarWindow(v zvarMin, r0, r1, c0, c1 int) ([]float
 		return nil, err
 	}
 	nr, nc := r1-r0, c1-c0
-	out := make([]float64, nr*nc)
-	for i := range out {
-		out[i] = math.NaN()
-	}
-	rcStart, rcEnd := r0/cr, (r1-1)/cr
-	ccStart, ccEnd := c0/cc, (c1-1)/cc
-	for rc := rcStart; rc <= rcEnd; rc++ {
-		for cci := ccStart; cci <= ccEnd; cci++ {
-			block, present, err := r.readChunk2D(v.name, comp, rc, cci, cr*cc)
+	out := nanSlice(nr * nc)
+	for rc := r0 / cr; rc <= (r1-1)/cr; rc++ {
+		for cci := c0 / cc; cci <= (c1-1)/cc; cci++ {
+			block, present, err := r.readChunk(v.name, comp, []int{rc, cci}, cr*cc)
 			if err != nil {
 				return nil, err
 			}
 			if !present {
-				continue // chunk absent → fill_value (NaN)
+				continue
 			}
 			for li := 0; li < cr; li++ {
 				gr := rc*cr + li
@@ -240,14 +295,64 @@ func (r *ZarrWindowReader) readVarWindow(v zvarMin, r0, r1, c0, c1 int) ([]float
 			}
 		}
 	}
-	return out, nil
+	return xarray.NewDataArray([]string{r.yDim, r.xDim}, []int{nr, nc}, out,
+		map[string][]float64{r.yDim: clone(yv[r0:r1]), r.xDim: clone(xv[c0:c1])}, v.name)
 }
 
-// readChunk2D lit le fichier-chunk "rc.cc", le décompresse (comp) et le décode en
-// n float64 (<f8 LE).
-func (r *ZarrWindowReader) readChunk2D(varName, comp string, rc, cc, n int) ([]float64, bool, error) {
-	key := strconv.Itoa(rc) + "." + strconv.Itoa(cc)
-	raw, err := os.ReadFile(filepath.Join(r.dir, varName, key))
+// read3D lit la fenêtre [t0,t1)×[r0,r1)×[c0,c1) d'une variable 3D [t, y, x].
+func (r *ZarrWindowReader) read3D(v zvarMin, t0, t1, r0, r1, c0, c1 int, tv, yv, xv []float64) (*xarray.DataArray[float64], error) {
+	Y, C := v.meta.Shape[1], v.meta.Shape[2]
+	ct, cr, cc := v.meta.Chunks[0], v.meta.Chunks[1], v.meta.Chunks[2]
+	comp, err := compressorID(v.meta.Compressor)
+	if err != nil {
+		return nil, err
+	}
+	nt, nr, nc := t1-t0, r1-r0, c1-c0
+	out := nanSlice(nt * nr * nc)
+	for tc := t0 / ct; tc <= (t1-1)/ct; tc++ {
+		for rc := r0 / cr; rc <= (r1-1)/cr; rc++ {
+			for cci := c0 / cc; cci <= (c1-1)/cc; cci++ {
+				block, present, err := r.readChunk(v.name, comp, []int{tc, rc, cci}, ct*cr*cc)
+				if err != nil {
+					return nil, err
+				}
+				if !present {
+					continue
+				}
+				for lt := 0; lt < ct; lt++ {
+					gt := tc*ct + lt
+					if gt < t0 || gt >= t1 {
+						continue
+					}
+					for li := 0; li < cr; li++ {
+						gr := rc*cr + li
+						if gr < r0 || gr >= r1 || gr >= Y {
+							continue
+						}
+						for lj := 0; lj < cc; lj++ {
+							gc := cci*cc + lj
+							if gc < c0 || gc >= c1 || gc >= C {
+								continue
+							}
+							out[((gt-t0)*nr+(gr-r0))*nc+(gc-c0)] = block[(lt*cr+li)*cc+lj]
+						}
+					}
+				}
+			}
+		}
+	}
+	return xarray.NewDataArray([]string{r.tDim, r.yDim, r.xDim}, []int{nt, nr, nc}, out,
+		map[string][]float64{r.tDim: clone(tv[t0:t1]), r.yDim: clone(yv[r0:r1]), r.xDim: clone(xv[c0:c1])}, v.name)
+}
+
+// readChunk lit le fichier-chunk aux indices coord (clé « i.j[.k] »), le
+// décompresse et le décode en n float64 (<f8 LE). Chunk absent → fill_value.
+func (r *ZarrWindowReader) readChunk(varName, comp string, coord []int, n int) ([]float64, bool, error) {
+	parts := make([]string, len(coord))
+	for i, c := range coord {
+		parts[i] = strconv.Itoa(c)
+	}
+	raw, err := os.ReadFile(filepath.Join(r.dir, varName, strings.Join(parts, ".")))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, false, nil
@@ -261,6 +366,16 @@ func (r *ZarrWindowReader) readChunk2D(varName, comp string, rc, cc, n int) ([]f
 	}
 	return decodeF8LE(dec, n)
 }
+
+func nanSlice(n int) []float64 {
+	s := make([]float64, n)
+	for i := range s {
+		s[i] = math.NaN()
+	}
+	return s
+}
+
+func clone(s []float64) []float64 { return append([]float64(nil), s...) }
 
 // readArray1D lit intégralement un tableau 1D (coordonnée).
 func (r *ZarrWindowReader) readArray1D(name string, meta zarrayMetaMin) ([]float64, error) {

@@ -35,7 +35,7 @@ func TestZarrWindowPrunesChunks(t *testing.T) {
 	}
 
 	// bbox = coin haut-gauche : lon∈[0,1], lat∈[3,4] → exactement le chunk 0.0.
-	ds, err := r.ReadWindow(&[4]float64{0, 3, 1, 4})
+	ds, err := r.ReadWindow(WindowSel{BBox: &[4]float64{0, 3, 1, 4}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestZarrWindowFullReadsAll(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "g")
 	writeChunkedZarr(t, dir)
 	r, _ := OpenZarrWindow(dir, "longitude", "latitude")
-	ds, err := r.ReadWindow(nil) // toute la grille
+	ds, err := r.ReadWindow(WindowSel{}) // toute la grille
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestZarrWindowCompressed(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ouverture %s: %v", tc.name, err)
 			}
-			ds, err := r.ReadWindow(&[4]float64{0, 3, 1, 4})
+			ds, err := r.ReadWindow(WindowSel{BBox: &[4]float64{0, 3, 1, 4}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -171,6 +171,76 @@ func TestZarrWindowCompressed(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// writeCube3D écrit un cube [time, lat, lon] 4×4×4 en chunks 1×2×2.
+func writeCube3D(t *testing.T, dir string) {
+	t.Helper()
+	coords := map[string][]float64{"time": {0, 1, 2, 3}, "latitude": {4, 3, 2, 1}, "longitude": {0, 1, 2, 3}}
+	d := make([]float64, 64)
+	for i := range d {
+		d[i] = float64(i) // = t*16 + lat*4 + lon
+	}
+	da, _ := xarray.NewDataArray([]string{"time", "latitude", "longitude"}, []int{4, 4, 4}, d, coords, "t2m")
+	da.Variable().SetAttr("units", "K")
+	ds, _ := xarray.NewDataset(map[string]*xarray.DataArray[float64]{"t2m": da})
+	if err := xarray.WriteDatasetZarrChunked(dir, ds, map[string]int{"time": 1, "latitude": 2, "longitude": 2}, xarray.ZarrNone); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestZarrWindow3DPrunesTimeAndSpace : cube temporel, élagage sur temps ET espace.
+func TestZarrWindow3DPrunesTimeAndSpace(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "cube")
+	writeCube3D(t, dir)
+	r, err := OpenZarrWindow(dir, "longitude", "latitude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.TDim() != "time" {
+		t.Fatalf("TDim=%q, attendu time", r.TDim())
+	}
+	// bbox coin (1 chunk spatial) + temps [1,2] (2 chunks temps de taille 1).
+	ds, err := r.ReadWindow(WindowSel{BBox: &[4]float64{0, 3, 1, 4}, TRange: &[2]float64{1, 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.ChunksRead() != 2 { // 2 (temps) × 1 (spatial)
+		t.Errorf("ChunksRead=%d, attendu 2 (2 chunks temps × 1 spatial)", r.ChunksRead())
+	}
+	v, _ := ds.Get("t2m")
+	if got := v.Shape(); len(got) != 3 || got[0] != 2 || got[1] != 2 || got[2] != 2 {
+		t.Fatalf("shape=%v, attendu [2 2 2]", got)
+	}
+	tv, _ := ds.Coord("time")
+	if len(tv) != 2 || tv[0] != 1 || tv[1] != 2 {
+		t.Errorf("temps=%v, attendu [1 2]", tv)
+	}
+}
+
+// TestChunked3DQueryDatetime : requête bbox+datetime via Collection → élagage
+// temps+espace, sans matérialiser le cube complet.
+func TestChunked3DQueryDatetime(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "cube")
+	writeCube3D(t, dir)
+	c, err := LoadChunkedZarr(dir, "c", "Cube", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.TDim != "time" {
+		t.Fatalf("TDim=%q, attendu time", c.TDim)
+	}
+	ds, err := c.Query(QueryParams{BBox: &[4]float64{0, 3, 1, 4}, Datetime: &[2]float64{1, 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Data != nil {
+		t.Error("le cube complet ne doit PAS être matérialisé")
+	}
+	v, _ := ds.Get("t2m")
+	if len(v.Data()) != 8 { // 2×2×2
+		t.Errorf("fenêtre=%d cellules, attendu 8", len(v.Data()))
 	}
 }
 

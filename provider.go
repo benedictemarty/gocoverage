@@ -44,11 +44,24 @@ type Collection struct {
 	// producteur connaît la nature du temps). Optionnel.
 	TimeEpoch *bool
 
-	// Window, si défini, fournit une lecture élaguée par bbox (ne lit que les
-	// chunks nécessaires) — cf. LoadChunkedZarr. Quand il est présent, une requête
-	// à emprise n'a pas besoin de charger toute la grille (Data peut être nil et
-	// n'est matérialisé que pour les accès sans emprise / métadonnées). Optionnel.
-	Window func(bbox *[4]float64) (*xarray.Dataset[float64], error)
+	// Window, si défini, fournit une lecture élaguée (ne lit que les chunks
+	// recouvrant l'emprise et/ou la plage temporelle demandées) — cf.
+	// LoadChunkedZarr. Quand il est présent, une requête à emprise/datetime n'a
+	// pas besoin de charger toute la grille (Data peut être nil et n'est
+	// matérialisé que pour les accès globaux / métadonnées). Optionnel.
+	Window func(sel WindowSel) (*xarray.Dataset[float64], error)
+
+	// TExtent, si défini, fournit l'étendue temporelle [min, max] sans charger la
+	// grille (renseigné par LoadChunkedZarr depuis l'axe temporel décodé) — pour
+	// que les requêtes datetime restent paresseuses. Optionnel.
+	TExtent *[2]float64
+}
+
+// WindowSel décrit la fenêtre d'une lecture élaguée : emprise spatiale et/ou
+// plage temporelle (nil = axe entier). Extensible sans casser la signature.
+type WindowSel struct {
+	BBox   *[4]float64 // [minX, minY, maxX, maxY]
+	TRange *[2]float64 // [t0, t1] (valeurs de l'axe temporel décodé)
 }
 
 // grid renvoie la grille complète : Data si présent, sinon la matérialise via
@@ -56,7 +69,7 @@ type Collection struct {
 // emprise (métadonnées) ; les requêtes à emprise passent par la lecture élaguée.
 func (c *Collection) grid() *xarray.Dataset[float64] {
 	if c.Data == nil && c.Window != nil {
-		if ds, err := c.Window(nil); err == nil {
+		if ds, err := c.Window(WindowSel{}); err == nil { // fenêtre vide = grille entière
 			c.Data = ds
 		}
 	}
@@ -157,6 +170,9 @@ func (c *Collection) BBox() [4]float64 {
 func (c *Collection) TimeExtent() ([2]float64, bool) {
 	if c.TDim == "" {
 		return [2]float64{}, false
+	}
+	if c.TExtent != nil { // indice sans chargement (collections élaguées)
+		return *c.TExtent, true
 	}
 	ts, err := c.grid().Coord(c.TDim)
 	if err != nil || len(ts) == 0 {

@@ -77,13 +77,14 @@ func (c *Collection) Query(q QueryParams) (*xarray.Dataset[float64], error) {
 	// toute la grille) ; sinon la grille complète. On évite d'appeler grid() dans
 	// le cas élagué (sinon la grille complète serait chargée inutilement).
 	var ds *xarray.Dataset[float64]
-	if c.Window != nil && q.BBox != nil {
-		win, err := c.Window(q.BBox)
+	if c.Window != nil && (q.BBox != nil || q.Datetime != nil) {
+		win, err := c.Window(WindowSel{BBox: q.BBox, TRange: q.Datetime})
 		if err != nil {
 			return nil, fmt.Errorf("lecture élaguée: %w", err)
 		}
 		ds = win
-		q.BBox = nil // emprise déjà appliquée par la lecture élaguée
+		q.BBox = nil     // emprise déjà appliquée par la lecture élaguée
+		q.Datetime = nil // plage temporelle déjà appliquée
 	} else {
 		ds = c.grid()
 	}

@@ -51,9 +51,15 @@ func (c *Collection) Area(ring [][2]float64, p EDRParams) (*xarray.Dataset[float
 	return maskOutsidePolygon(ds, c.XDim, c.YDim, ring)
 }
 
-// maskOutsidePolygon met à NaN les cellules (x, y) hors du polygone, pour chaque
-// variable, en tenant compte de dimensions supplémentaires (temps/niveau).
+// maskOutsidePolygon met à NaN les cellules (x, y) hors du polygone.
 func maskOutsidePolygon(ds *xarray.Dataset[float64], xDim, yDim string, ring [][2]float64) (*xarray.Dataset[float64], error) {
+	return maskDataset(ds, xDim, yDim, func(x, y float64) bool { return pointInPolygon(x, y, ring) })
+}
+
+// maskDataset met à NaN les cellules dont le centre (x, y) ne satisfait pas keep,
+// pour chaque variable, en tenant compte des dimensions supplémentaires
+// (temps/niveau) via les indices d'axes x/y.
+func maskDataset(ds *xarray.Dataset[float64], xDim, yDim string, keep func(x, y float64) bool) (*xarray.Dataset[float64], error) {
 	xs, err := ds.Coord(xDim)
 	if err != nil {
 		return nil, err
@@ -80,7 +86,7 @@ func maskOutsidePolygon(ds *xarray.Dataset[float64], xDim, yDim string, ring [][
 		for flat := range data {
 			ix := (flat / strides[xi]) % shape[xi]
 			iy := (flat / strides[yi]) % shape[yi]
-			if !pointInPolygon(xs[ix], ys[iy], ring) {
+			if !keep(xs[ix], ys[iy]) {
 				data[flat] = math.NaN()
 			}
 		}

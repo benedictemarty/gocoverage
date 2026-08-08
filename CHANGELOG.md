@@ -5,6 +5,20 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.13.0] - 2026-08-08
+
+### Ajouté — EDR `corridor`
+
+- **Requête EDR `corridor`** : sous-ensemble dans un **tube** (buffer) autour
+  d'une polyligne (route), de largeur `corridor-width` (degrés). Restreint à
+  l'emprise élargie puis masque (→ null) les cellules à plus de `width/2` de la
+  polyligne (distance point↔segment). Sortie CoverageJSON. **Cas aviation** :
+  couloir autour d'une route de vol.
+- Endpoint `GET /collections/{id}/corridor?coords=LINESTRING(…)&corridor-width=…`
+  + lien dans la description. `Collection.Corridor`, `distToPolyline`. Masquage
+  factorisé (`maskDataset`) partagé avec `area`. Tests : distances, tube diagonal,
+  HTTP.
+
 ## [0.12.0] - 2026-08-08
 
 ### Ajouté — EDR `area`

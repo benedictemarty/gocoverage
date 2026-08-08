@@ -85,9 +85,38 @@ func (s *Server) collectionRoutes(w http.ResponseWriter, r *http.Request) {
 		s.trajectory(w, r, c)
 	case "area":
 		s.area(w, r, c)
+	case "corridor":
+		s.corridor(w, r, c)
 	default:
 		writeErr(w, 404, "ressource inconnue: "+action)
 	}
+}
+
+// corridor : requête EDR corridor → CoverageJSON (grille masquée par le tube).
+// Paramètres : coords=LINESTRING(…), corridor-width=<largeur totale, degrés>.
+func (s *Server) corridor(w http.ResponseWriter, r *http.Request, c *Collection) {
+	q := r.URL.Query()
+	line, err := parseLineString(q.Get("coords"))
+	if err != nil {
+		writeErr(w, 400, "coords invalide: "+err.Error())
+		return
+	}
+	width, err := strconv.ParseFloat(strings.TrimSpace(q.Get("corridor-width")), 64)
+	if err != nil || width <= 0 {
+		writeErr(w, 400, "corridor-width invalide (largeur > 0 en degrés attendue)")
+		return
+	}
+	dt, err := s.parseDatetimeParam(q.Get("datetime"), c)
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	ds, err := c.Corridor(line, width/2, EDRParams{SelectProperties: parseList(q.Get("parameter-name")), Datetime: dt})
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	s.writeCoverage(w, r, c, ds)
 }
 
 // area : requête EDR area → CoverageJSON (grille masquée par le polygone).
@@ -194,6 +223,7 @@ func (s *Server) describe(w http.ResponseWriter, r *http.Request, c *Collection)
 			{"rel": "cube", "href": "/collections/" + c.ID + "/cube"},
 			{"rel": "trajectory", "href": "/collections/" + c.ID + "/trajectory"},
 			{"rel": "area", "href": "/collections/" + c.ID + "/area"},
+			{"rel": "corridor", "href": "/collections/" + c.ID + "/corridor"},
 		},
 	})
 }

@@ -19,10 +19,11 @@ et le projet suit un versionnement sémantique.
 - **`cmd/grib2zarr`** : commande CLI
   `grib2zarr [-chunk N] [-comp none|zlib|zstd] <in.grib> <out.zarr>`.
 - **Limites (héritées du décodeur xarray-go)** : GRIB **édition 2**, grille lat/lon
-  régulière, **simple packing** uniquement — pas de JPEG2000/PNG packing, ni
-  grilles gaussiennes réduites, ni GRIB1 ; métadonnées de paramètre/niveau/échéance
-  non extraites. Pour des GRIB opérationnels, convertir en amont (wgrib2/cdo/
-  eccodes). Un fichier non supporté renvoie une erreur claire.
+  régulière, **simple (5.0) et complex (5.2/5.3) packing** (sans bitmap) — pas de
+  JPEG2000/PNG packing ni templates locaux (ecCodes), grilles gaussiennes réduites
+  ou GRIB1 ; métadonnées de paramètre/niveau/échéance non extraites. Le décodeur
+  renvoie une erreur explicite pour les cas non gérés (convertir en amont via
+  wgrib2/cdo/eccodes).
 - Tests : `LoadGrib` + service HTTP, aller-retour **GRIB→Zarr chunké→lecture
   élaguée** (valeurs conservées), rejet d'un fichier non-GRIB.
 

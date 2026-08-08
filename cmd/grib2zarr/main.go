@@ -6,9 +6,10 @@
 //
 //	grib2zarr [-chunk N] [-comp none|zlib|zstd] <entrée.grib> <sortie.zarr>
 //
-// Limites : GRIB édition 2, grille lat/lon régulière, simple packing uniquement
-// (voir gocoverage.LoadGrib). Pour des GRIB opérationnels (JPEG2000…), convertir
-// en amont via wgrib2/cdo/eccodes.
+// Limites : GRIB édition 2, grille lat/lon régulière, simple (5.0) ou complex
+// (5.2/5.3) packing (voir gocoverage.LoadGrib). Pour les formats non gérés
+// (JPEG2000/PNG, gaussienne réduite, GRIB1), convertir en amont via wgrib2/cdo/
+// eccodes.
 package main
 
 import (

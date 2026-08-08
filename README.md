@@ -19,16 +19,28 @@ C'est le pendant Go de `pygeoapi` (serveur Python) + `xarray` (données). Pour u
 serveur OGC API complet et productisé, voir des projets dédiés (ex. **gogeoapi**,
 GoKoala, GOAF) ; `gocoverage` est une démonstration compacte et autonome.
 
-## Fonctions couvertes (parité pygeoapi)
+## Capacités
 
-| pygeoapi | gocoverage |
-|----------|------------|
-| `get_fields` | `Collection.Fields` |
-| `_get_coverage_properties` | `Collection.Properties` |
-| `query` (properties, subsets, bbox, datetime) | `Collection.Query` |
-| `gen_covjson` | `Collection.CoverageJSON` |
-| EDR `position` / `cube` (+ `z`) | `Collection.Position` / `Collection.Cube` |
-| ouverture netCDF / Zarr | `LoadNetCDF` / `LoadZarr` (⚠️ portée limitée, voir *Limitations I/O*) |
+Au-delà de la parité pygeoapi initiale, gocoverage couvre désormais un
+sous-ensemble étendu d'OGC API - Coverages et EDR, avec lecture partielle.
+
+**OGC API - Coverages** : `/coverage` (bbox, subset, datetime, properties,
+scaling `scale-factor`/`scale-axes`/`scale-size`), `/coverage/domainset` (CIS
+GeneralGrid), `/coverage/rangetype` (SWE DataRecord), `/conformance`, `/api`
+(squelette OpenAPI). CoverageJSON, netCDF, Zarr, GeoJSON en sortie (`f=` ou `Accept`).
+
+**OGC API - EDR** : `position`, `cube`, `area` (polygone à trous), `corridor`,
+`radius`, `trajectory`, `locations`, `instances` — avec `parameter-name`,
+`datetime`, `z`, `interpolation=bilinear`, distances métriques (`km`/`m`).
+
+**Entrées** : `LoadNetCDF`, `LoadZarr`, `LoadChunkedZarr` (lecture élaguée par
+chunks), `LoadPyramidZarr` (aperçus multi-résolution), `LoadGrib` (GRIB2) +
+`ConvertGribToZarr` / `cmd/grib2zarr`.
+
+**Passage à l'échelle** : `MemProvider` (tout en mémoire) ou `LazyFileProvider`
+(résidence RAM bornée par LRU) ; les collections chunkées ne lisent que les
+chunks recouvrant l'emprise/plage temporelle demandée, métadonnées comprises
+(voir *Lecture élaguée*).
 
 ## Build & lancer
 
@@ -51,12 +63,22 @@ go install github.com/benedictemarty/gocoverage/cmd/gocoverage@latest
 
 | Route | Rôle |
 |-------|------|
-| `GET /` | landing page |
+| `GET /` | landing page (liens data/conformance/api) |
+| `GET /conformance` | classes de conformité (OGC API - Coverages/EDR) |
+| `GET /api` | squelette OpenAPI 3.0 |
 | `GET /collections` | liste des couvertures (id, titre, bbox, paramètres) |
-| `GET /collections/{id}` | description : champs (`Fields`) + propriétés (`Properties`) |
-| `GET /collections/{id}/coverage` | requête → **CoverageJSON** |
+| `GET /collections/{id}` | description conforme : `extent`, `crs`, `parameter_names`, `data_queries` |
+| `GET /collections/{id}/coverage` | requête → **CoverageJSON** (+ scaling) |
+| `GET /collections/{id}/coverage/domainset` | domaine CIS GeneralGrid |
+| `GET /collections/{id}/coverage/rangetype` | champs SWE DataRecord |
 | `GET /collections/{id}/position?coords=x,y` | point le plus proche (EDR, PointSeries) |
 | `GET /collections/{id}/cube?bbox=…` | sous-cube (EDR) |
+| `GET /collections/{id}/area?coords=POLYGON((…))` | découpe par polygone (à trous) |
+| `GET /collections/{id}/corridor?coords=LINESTRING(…)&corridor-width=…` | tube autour d'une route |
+| `GET /collections/{id}/radius?coords=POINT(…)&within=…&within-units=km` | disque autour d'un point |
+| `GET /collections/{id}/trajectory?coords=LINESTRING(…)` | profil le long d'une polyligne |
+| `GET /collections/{id}/locations` / `…/locations/{id}` | points nommés (ex. aéroports) |
+| `GET /collections/{id}/instances` / `…/instances/{id}/…` | versions temporelles |
 
 Paramètres de `coverage` : `properties=t2m,uwind`, `bbox=minx,miny,maxx,maxy`,
 `subset=Lat(43:45),Long(0:2)`, `datetime=lo/hi`.
@@ -68,10 +90,11 @@ intervalles `a/b`, bornes ouvertes `..`) ou des valeurs numériques (epoch). L'a
 temporel du CoverageJSON ressort en ISO 8601 quand les temps sont des secondes
 epoch.
 
-**Format de sortie** (`f=`) : `json` (CoverageJSON, défaut), `netcdf`/`nc`
-(netCDF natif via `xarray.WriteNetCDF`) ou `zarr` (archive ZIP du `.zarr` via
-`xarray.WriteDatasetZarr`, comme `_get_zarr_data` de pygeoapi). Ex.
-`.../coverage?bbox=1,42,4,45&f=netcdf`.
+**Format de sortie** (`f=` ou en-tête `Accept`) : `json` (CoverageJSON, défaut),
+`geojson` (FeatureCollection, refusé si multi-pas), `netcdf`/`nc` (netCDF natif)
+ou `zarr` (archive ZIP du `.zarr`). Ex. `.../coverage?bbox=1,42,4,45&f=netcdf`.
+Un `Accept` non satisfiable → 406 ; un `bbox-crs`/`crs` non supporté → 400 (pas
+de reprojection).
 
 ### Exemples
 
@@ -91,14 +114,29 @@ curl "http://localhost:8080/collections/demo/position?coords=2,43&parameter-name
 
 ## Architecture
 
-- `provider.go` : `Collection` (= un `xarray.Dataset[float64]`), `Provider`, `MemProvider`.
+- `provider.go` : `Collection`, `Provider`, `MemProvider`, `LazyFileProvider`, accès paresseux `grid()`.
 - `fields.go` : `Fields` (get_fields) et `Properties` (coverage_properties).
-- `query.go` : logique de requête (`Query`), parsing `subset`/`datetime`, subset de Dataset.
-- `coveragejson.go` : export CoverageJSON multi-paramètres (gen_covjson).
-- `edr.go` : EDR `Position` / `Cube`.
-- `fileprovider.go` : chargement netCDF/Zarr (`LoadNetCDF`, `LoadZarr`).
+- `query.go` : requête (`Query`), parsing `subset`/`datetime`, antiméridien, hook de lecture élaguée.
+- `coveragejson.go` / `geojson.go` : sorties CoverageJSON / GeoJSON.
+- `coverages.go` / `metadata.go` : OGC API - Coverages (conformance, domainset, rangetype, scaling) et description conforme (extent, data_queries).
+- `edr.go`, `area.go`, `corridor.go`, `radius.go`, `trajectory.go`, `locations.go` : requêtes EDR.
+- `fileprovider.go` : `LoadNetCDF` / `LoadZarr` ; `chunkzarr.go` : lecture Zarr élaguée par chunks (`LoadChunkedZarr`) ; `pyramid.go` : aperçus multi-résolution (`LoadPyramidZarr`) ; `grib.go` : GRIB2 (`LoadGrib`, `ConvertGribToZarr`).
+- `crs.go`, `geodist.go`, `zarrout.go` : CRS (décrit), distances métriques, export Zarr.
 - `server.go` : routeur `net/http`.
-- `cmd/gocoverage` : binaire de démonstration.
+- `cmd/gocoverage` : démo ; `cmd/grib2zarr` : conversion GRIB2 → Zarr.
+
+## Lecture élaguée (passage à l'échelle)
+
+Une collection ouverte par `LoadChunkedZarr` (ou `LoadPyramidZarr`) n'est **jamais
+chargée entièrement** : une requête à emprise (`bbox`) et/ou plage temporelle
+(`datetime`) ne lit que les fichiers-chunks Zarr qui recouvrent la fenêtre — y
+compris pour un cube 3D `[t, lat, lon]` (élagage sur les trois axes). Les
+**métadonnées** (bbox, champs, domainset) sont servies depuis des indices légers
+(coordonnées + schéma) sans matérialiser les données. `LoadPyramidZarr` sert en
+plus un **niveau grossier** pour les grandes emprises. Périmètre du lecteur
+élagué : Zarr v2, `<f8`, ordre C, compression none/zlib/zstd (blosc non géré →
+repli sur `LoadZarr`). Combiné à `LazyFileProvider`, le nombre de collections
+servies est découplé de la mémoire résidente.
 
 ## Limitations I/O (frontière réelle, mesurée)
 
@@ -145,7 +183,9 @@ formats binaires via un convertisseur.
 - **Axe vertical `z`** : pris en charge en **sélection** EDR (`z=…`, niveau unique
   au plus proche) ; un axe à plusieurs niveaux n'est pas représentable en
   CoverageJSON (sélectionnez un niveau → sinon HTTP 400).
-- Sous-ensemble d'OGC API (pas d'OpenAPI/conformance/HTML).
+- `/conformance` et `/api` (squelette OpenAPI) sont exposés ; il n'y a **pas** de
+  représentation **HTML**, ni de reprojection effective, ni de rendu de carte
+  (OGC API - Maps/Tiles hors périmètre).
 
 Voir [`CHANGELOG.md`](CHANGELOG.md), [`docs/parite-pygeoapi.md`](docs/parite-pygeoapi.md)
 (cartographie fonction par fonction) et [`docs/SYNTHESE.md`](docs/SYNTHESE.md)

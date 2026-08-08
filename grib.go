@@ -8,17 +8,19 @@ import (
 	"github.com/benedictemarty/xarray"
 )
 
-// Prise en charge GRIB2 (grille lat/lon, simple packing) via xarray.ReadGrib :
+// Prise en charge GRIB2 (grille lat/lon régulière) via xarray.ReadGrib :
 //   - LoadGrib          : GRIB2 → Collection (comme LoadNetCDF/LoadZarr) ;
 //   - ConvertGribToZarr : GRIB2 → store Zarr (chunké/compressé), ensuite servi en
 //     lecture élaguée par LoadChunkedZarr.
 //
 // Limites (héritées du décodeur xarray-go) : GRIB **édition 2**, grille lat/lon
-// régulière, **simple packing** uniquement — pas de JPEG2000/PNG packing (courant
-// en opérationnel), ni grilles gaussiennes réduites, ni GRIB1. Les métadonnées de
-// paramètre/niveau/échéance ne sont pas extraites : chaque message devient une
-// variable `grib_N` (grille 2D lat/lon). Pour des GRIB opérationnels, convertir en
-// amont (wgrib2/cdo/eccodes) en simple packing ou netCDF.
+// régulière (`regular_ll`, template 3.0), **simple packing** (5.0) **et complex
+// packing** (5.2/5.3, sans bitmap de valeurs manquantes). Non gérés : JPEG2000/PNG
+// packing et templates locaux (ex. 50002, requièrent ecCodes), grilles gaussiennes
+// réduites, GRIB1. Le décodeur renvoie une erreur explicite pour ces cas. Les
+// métadonnées de paramètre/niveau/échéance ne sont pas extraites : chaque message
+// devient une variable `grib_N` (grille 2D lat/lon). Pour les formats non gérés,
+// convertir en amont (wgrib2/cdo/eccodes).
 
 // gribDataset lit tous les messages GRIB2 d'un flux et les assemble en un Dataset
 // (une variable `grib_N` par message ; les messages doivent partager la grille).

@@ -93,9 +93,43 @@ func (s *Server) collectionRoutes(w http.ResponseWriter, r *http.Request) {
 		s.area(w, r, c)
 	case "corridor":
 		s.corridor(w, r, c)
+	case "radius":
+		s.radius(w, r, c)
 	default:
 		writeErr(w, 404, "ressource inconnue: "+action)
 	}
+}
+
+// radius : requête EDR radius → CoverageJSON (grille masquée par le disque).
+// Paramètres : coords=POINT(lon lat), within=<rayon>, within-units=deg|km|m.
+func (s *Server) radius(w http.ResponseWriter, r *http.Request, c *Collection) {
+	q := r.URL.Query()
+	lon, lat, err := parsePoint(q.Get("coords"))
+	if err != nil {
+		writeErr(w, 400, "coords invalide: "+err.Error())
+		return
+	}
+	within, err := strconv.ParseFloat(strings.TrimSpace(q.Get("within")), 64)
+	if err != nil || within <= 0 {
+		writeErr(w, 400, "within invalide (rayon > 0 attendu)")
+		return
+	}
+	radiusDeg, err := radiusInDegrees(within, q.Get("within-units"))
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	dt, err := s.parseDatetimeParam(q.Get("datetime"), c)
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	ds, err := c.Radius(lon, lat, radiusDeg, EDRParams{SelectProperties: parseList(q.Get("parameter-name")), Datetime: dt})
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	s.writeCoverage(w, r, c, ds)
 }
 
 // corridor : requête EDR corridor → CoverageJSON (grille masquée par le tube).
@@ -232,6 +266,7 @@ func (s *Server) describe(w http.ResponseWriter, r *http.Request, c *Collection)
 			{"rel": "trajectory", "href": "/collections/" + c.ID + "/trajectory"},
 			{"rel": "area", "href": "/collections/" + c.ID + "/area"},
 			{"rel": "corridor", "href": "/collections/" + c.ID + "/corridor"},
+			{"rel": "radius", "href": "/collections/" + c.ID + "/radius"},
 		},
 	})
 }

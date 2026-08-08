@@ -5,6 +5,19 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.15.0] - 2026-08-08
+
+### Ajouté — EDR `radius`
+
+- **Requête EDR `radius`** : sous-ensemble dans un **disque** autour d'un point
+  (`coords=POINT(lon lat)`, `within=<rayon>`, `within-units=deg|km|m`). Restreint
+  à l'emprise carrée du disque puis masque (→ null) les cellules à plus de `within`
+  du centre. Sortie CoverageJSON.
+- Conversion d'unités **approximative** (1° ≈ 111,32 km, sans correction de
+  latitude — assumé). Endpoint `GET /collections/{id}/radius` + lien dans la
+  description. `Collection.Radius`, `parsePoint`, `radiusInDegrees` ;
+  masquage factorisé (`maskDataset`). Tests : conversion, masquage, parsing, HTTP.
+
 ## [0.14.0] - 2026-08-08
 
 ### Ajouté — OGC API - Coverages (successeur moderne de WCS)

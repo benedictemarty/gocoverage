@@ -5,6 +5,27 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.27.0] - 2026-08-09
+
+### Ajouté — prise en charge GRIB2 (LoadGrib + cmd/grib2zarr)
+
+- **`LoadGrib(path, id, title, xDim, yDim, tDim)`** : ouvre un fichier GRIB2
+  (grille lat/lon, simple packing) en `Collection`, sur le modèle de
+  `LoadNetCDF`/`LoadZarr` (via `xarray.ReadGrib`). Chaque message devient une
+  variable `grib_N`.
+- **`ConvertGribToZarr(gribPath, zarrDir, chunks, comp)`** : convertit un GRIB2 en
+  store **Zarr chunké/compressé**, ensuite servi en **lecture élaguée** par
+  `LoadChunkedZarr`.
+- **`cmd/grib2zarr`** : commande CLI
+  `grib2zarr [-chunk N] [-comp none|zlib|zstd] <in.grib> <out.zarr>`.
+- **Limites (héritées du décodeur xarray-go)** : GRIB **édition 2**, grille lat/lon
+  régulière, **simple packing** uniquement — pas de JPEG2000/PNG packing, ni
+  grilles gaussiennes réduites, ni GRIB1 ; métadonnées de paramètre/niveau/échéance
+  non extraites. Pour des GRIB opérationnels, convertir en amont (wgrib2/cdo/
+  eccodes). Un fichier non supporté renvoie une erreur claire.
+- Tests : `LoadGrib` + service HTTP, aller-retour **GRIB→Zarr chunké→lecture
+  élaguée** (valeurs conservées), rejet d'un fichier non-GRIB.
+
 ## [0.26.0] - 2026-08-08
 
 ### Ajouté — aperçus multi-résolution (pyramide Zarr)

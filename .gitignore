@@ -1,4 +1,9 @@
 *.exe
 *.test
 *.out
+.env
+
+# Binaires de commandes compilés à la racine (go build ./cmd/xxx)
 /gocoverage
+/subsetdemo
+/geosat

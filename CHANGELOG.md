@@ -5,6 +5,22 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.25.0] - 2026-08-08
+
+### Amélioré — métadonnées d'une collection élaguée entièrement paresseuses
+
+- `describe`, `domainset`, `rangetype` et `Properties`/`BBox`/`Params` d'une
+  collection à lecture élaguée sont désormais servis depuis des **indices légers**
+  (coordonnées + schéma des variables, lus à l'ouverture) — **sans jamais
+  matérialiser les données**. Une collection chargée par `LoadChunkedZarr` est
+  ainsi **entièrement paresseuse** : ni les données (fenêtres élaguées), ni les
+  métadonnées ne nécessitent de charger la grille complète.
+- Nouveaux indices `Collection.coordHint/fieldHint/dimsHint` (peuplés par
+  `LoadChunkedZarr` depuis le lecteur) ; accesseurs `coordOf`/`dimSizes` avec repli
+  transparent sur `grid()` pour les collections en mémoire.
+- Test : `describe`+`domainset`+`rangetype` d'une collection élaguée laissent
+  `Data` à nil (aucune matérialisation), bbox exposée correcte.
+
 ## [0.24.0] - 2026-08-08
 
 ### Ajouté — élagage des cubes temporels 3D `[t, lat, lon]`

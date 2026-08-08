@@ -55,6 +55,34 @@ type Collection struct {
 	// grille (renseigné par LoadChunkedZarr depuis l'axe temporel décodé) — pour
 	// que les requêtes datetime restent paresseuses. Optionnel.
 	TExtent *[2]float64
+
+	// Indices de métadonnées (renseignés par LoadChunkedZarr) permettant de servir
+	// description/domainset/rangetype sans matérialiser les données : coordonnées
+	// par dimension, champs (schéma des variables) et tailles de dimensions.
+	coordHint map[string][]float64
+	fieldHint []Field
+	dimsHint  map[string]int
+}
+
+// coordOf renvoie la coordonnée d'une dimension : indice léger si disponible,
+// sinon lue depuis la grille (chargement à la demande).
+func (c *Collection) coordOf(dim string) []float64 {
+	if c.coordHint != nil {
+		if v, ok := c.coordHint[dim]; ok {
+			return v
+		}
+	}
+	v, _ := c.grid().Coord(dim)
+	return v
+}
+
+// dimSizes renvoie les tailles de dimensions : indice léger si disponible, sinon
+// depuis la grille.
+func (c *Collection) dimSizes() map[string]int {
+	if c.dimsHint != nil {
+		return c.dimsHint
+	}
+	return c.grid().Dims()
 }
 
 // WindowSel décrit la fenêtre d'une lecture élaguée : emprise spatiale et/ou
@@ -156,12 +184,18 @@ type NamedLocation struct {
 }
 
 // Params renvoie les noms des paramètres (variables) exposés par la collection.
-func (c *Collection) Params() []string { return c.grid().VarNames() }
+func (c *Collection) Params() []string {
+	fs := c.Fields()
+	out := make([]string, len(fs))
+	for i, f := range fs {
+		out[i] = f.Name
+	}
+	return out
+}
 
 // BBox renvoie l'emprise [minX, minY, maxX, maxY] à partir des coordonnées.
 func (c *Collection) BBox() [4]float64 {
-	xs, _ := c.grid().Coord(c.XDim)
-	ys, _ := c.grid().Coord(c.YDim)
+	xs, ys := c.coordOf(c.XDim), c.coordOf(c.YDim)
 	return [4]float64{minOf(xs), minOf(ys), maxOf(xs), maxOf(ys)}
 }
 

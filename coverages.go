@@ -110,13 +110,9 @@ type covIndexAxis struct {
 // échéant, l'axe temporel (irrégulier) et vertical, plus les limites d'index de
 // la grille. Pendant du DomainSet de WCS DescribeCoverage.
 func (c *Collection) DomainSet() (map[string]interface{}, error) {
-	xv, err := c.grid().Coord(c.XDim)
-	if err != nil {
-		return nil, fmt.Errorf("coordonnée X %q: %w", c.XDim, err)
-	}
-	yv, err := c.grid().Coord(c.YDim)
-	if err != nil {
-		return nil, fmt.Errorf("coordonnée Y %q: %w", c.YDim, err)
+	xv, yv := c.coordOf(c.XDim), c.coordOf(c.YDim)
+	if len(xv) == 0 || len(yv) == 0 {
+		return nil, fmt.Errorf("coordonnées X/Y %q/%q introuvables", c.XDim, c.YDim)
 	}
 
 	axisLabels := []string{"x", "y"}
@@ -133,7 +129,7 @@ func (c *Collection) DomainSet() (map[string]interface{}, error) {
 	gridLabels := []string{"i", "j"}
 
 	if c.ZDim != "" {
-		if zv, err := c.grid().Coord(c.ZDim); err == nil && len(zv) > 0 {
+		if zv := c.coordOf(c.ZDim); len(zv) > 0 {
 			axisLabels = append(axisLabels, "z")
 			axes = append(axes, covIrregularAxisDesc{Type: "IrregularAxis", AxisLabel: "z", Coordinate: zv})
 			gridLabels = append(gridLabels, "k")
@@ -141,7 +137,7 @@ func (c *Collection) DomainSet() (map[string]interface{}, error) {
 		}
 	}
 	if c.TDim != "" {
-		if tv, err := c.grid().Coord(c.TDim); err == nil && len(tv) > 0 {
+		if tv := c.coordOf(c.TDim); len(tv) > 0 {
 			axisLabels = append(axisLabels, "t")
 			axes = append(axes, covIrregularAxisDesc{Type: "IrregularAxis", AxisLabel: "t", Coordinate: tv, UomLabel: "s"})
 			gridLabels = append(gridLabels, "l")

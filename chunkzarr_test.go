@@ -174,6 +174,38 @@ func TestZarrWindowCompressed(t *testing.T) {
 	}
 }
 
+// TestChunkedMetadataStaysLazy : description/domainset/rangetype d'une collection
+// élaguée ne matérialisent jamais les données (servis depuis les indices).
+func TestChunkedMetadataStaysLazy(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "g")
+	writeChunkedZarr(t, dir)
+	c, err := LoadChunkedZarr(dir, "c", "Chunké", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := NewMemProvider()
+	if err := p.Add(c); err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(p)
+	for _, path := range []string{
+		"/collections/c",
+		"/collections/c/coverage/domainset",
+		"/collections/c/coverage/rangetype",
+	} {
+		if rec := doGET(t, srv, path); rec.Code != 200 {
+			t.Fatalf("%s: code=%d body=%s", path, rec.Code, rec.Body.String())
+		}
+	}
+	if c.Data != nil {
+		t.Error("les métadonnées ne doivent PAS matérialiser les données (indices coords/schéma)")
+	}
+	// La bbox exposée doit être correcte (depuis les coords lues).
+	if bb := c.BBox(); bb[0] != 0 || bb[2] != 3 {
+		t.Errorf("bbox=%v, attendu X∈[0,3]", bb)
+	}
+}
+
 // writeCube3D écrit un cube [time, lat, lon] 4×4×4 en chunks 1×2×2.
 func writeCube3D(t *testing.T, dir string) {
 	t.Helper()

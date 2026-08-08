@@ -205,10 +205,39 @@ func LoadChunkedZarr(dir, id, title, xDim, yDim string) (*Collection, error) {
 		return nil, lastErr
 	}
 	c := &Collection{ID: id, Title: title, XDim: xDim, YDim: yDim, TDim: r.TDim(), Window: r.ReadWindow}
+	// Indices de métadonnées : description/domainset/rangetype servis sans jamais
+	// matérialiser les données (coords + schéma légers déjà lus à l'ouverture).
+	c.coordHint = r.coords
+	c.fieldHint = r.schemaFields()
+	c.dimsHint = r.dimSizes()
 	if tv := r.coords[r.tDim]; r.tDim != "" && len(tv) > 0 {
 		c.TExtent = &[2]float64{minOf(tv), maxOf(tv)}
 	}
 	return c, nil
+}
+
+// schemaFields renvoie le schéma léger des variables de données (nom, type, unité,
+// libellé) sans lire les données.
+func (r *ZarrWindowReader) schemaFields() []Field {
+	out := make([]Field, 0, len(r.dataVars))
+	for _, v := range r.dataVars {
+		out = append(out, Field{
+			Name:  v.name,
+			Type:  fieldTypeFromAttrs(v.attrs),
+			Title: v.attrs["long_name"],
+			Unit:  v.attrs["units"],
+		})
+	}
+	return out
+}
+
+// dimSizes renvoie les tailles des dimensions x/y/(t) depuis les coordonnées.
+func (r *ZarrWindowReader) dimSizes() map[string]int {
+	d := map[string]int{r.xDim: len(r.coords[r.xDim]), r.yDim: len(r.coords[r.yDim])}
+	if r.tDim != "" {
+		d[r.tDim] = len(r.coords[r.tDim])
+	}
+	return d
 }
 
 // ChunksRead renvoie le nombre de fichiers-chunks ouverts au dernier ReadWindow.

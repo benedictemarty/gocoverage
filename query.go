@@ -163,7 +163,7 @@ func (c *Collection) resolveAxis(name string) (string, error) {
 		}
 		return c.ZDim, nil
 	}
-	for dim := range c.grid().Dims() {
+	for dim := range c.dimSizes() {
 		if strings.ToLower(dim) == n {
 			return dim, nil
 		}

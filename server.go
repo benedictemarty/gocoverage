@@ -184,7 +184,8 @@ func (s *Server) locationByID(w http.ResponseWriter, r *http.Request, c *Collect
 }
 
 // radius : requête EDR radius → CoverageJSON (grille masquée par le disque).
-// Paramètres : coords=POINT(lon lat), within=<rayon>, within-units=deg|km|m.
+// Paramètres : coords=POINT(lon lat), within=<rayon>, within-units=deg|km|m
+// (métrique : distance réelle en mètres). f=covjson (défaut) | geojson | netcdf | zarr.
 func (s *Server) radius(w http.ResponseWriter, r *http.Request, c *Collection) {
 	q := r.URL.Query()
 	lon, lat, err := parsePoint(q.Get("coords"))
@@ -197,17 +198,12 @@ func (s *Server) radius(w http.ResponseWriter, r *http.Request, c *Collection) {
 		writeErr(w, 400, "within invalide (rayon > 0 attendu)")
 		return
 	}
-	radiusDeg, err := radiusInDegrees(within, q.Get("within-units"))
-	if err != nil {
-		writeErr(w, 400, err.Error())
-		return
-	}
 	dt, err := s.parseDatetimeParam(q.Get("datetime"), c)
 	if err != nil {
 		writeErr(w, 400, err.Error())
 		return
 	}
-	ds, err := c.Radius(lon, lat, radiusDeg, EDRParams{SelectProperties: parseList(q.Get("parameter-name")), Datetime: dt})
+	ds, err := c.Radius(lon, lat, within, q.Get("within-units"), EDRParams{SelectProperties: parseList(q.Get("parameter-name")), Datetime: dt})
 	if err != nil {
 		writeErr(w, 400, err.Error())
 		return
@@ -234,7 +230,7 @@ func (s *Server) corridor(w http.ResponseWriter, r *http.Request, c *Collection)
 		writeErr(w, 400, err.Error())
 		return
 	}
-	ds, err := c.Corridor(line, width/2, EDRParams{SelectProperties: parseList(q.Get("parameter-name")), Datetime: dt})
+	ds, err := c.Corridor(line, width/2, q.Get("corridor-width-units"), EDRParams{SelectProperties: parseList(q.Get("parameter-name")), Datetime: dt})
 	if err != nil {
 		writeErr(w, 400, err.Error())
 		return
@@ -429,12 +425,24 @@ func (s *Server) position(w http.ResponseWriter, r *http.Request, c *Collection)
 		SelectProperties: parseList(q.Get("parameter-name")),
 		Datetime:         dt,
 		Z:                z,
+		Bilinear:         isBilinear(q.Get("interpolation")),
 	})
 	if err != nil {
 		writeErr(w, 400, err.Error())
 		return
 	}
 	s.writeCoverage(w, r, c, ds)
+}
+
+// isBilinear reconnaît les valeurs du paramètre EDR interpolation demandant une
+// interpolation bilinéaire (défaut : plus proche voisin).
+func isBilinear(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "bilinear", "linear":
+		return true
+	default:
+		return false
+	}
 }
 
 // cube : requête EDR cube → CoverageJSON.
@@ -520,8 +528,17 @@ func (s *Server) writeCoverage(w http.ResponseWriter, r *http.Request, c *Collec
 		w.Header().Set("Content-Disposition", "attachment; filename=\""+c.ID+".zarr.zip\"")
 		w.WriteHeader(200)
 		_, _ = w.Write(b)
+	case "geojson", "geoj", "geo+json":
+		b, err := c.GeoJSON(ds)
+		if err != nil {
+			writeErr(w, 500, "export geojson: "+err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/geo+json")
+		w.WriteHeader(200)
+		_, _ = w.Write(b)
 	default:
-		writeErr(w, 400, "format inconnu: "+r.URL.Query().Get("f")+" (json|netcdf|zarr)")
+		writeErr(w, 400, "format inconnu: "+r.URL.Query().Get("f")+" (json|geojson|netcdf|zarr)")
 	}
 }
 

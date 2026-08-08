@@ -5,6 +5,26 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.18.0] - 2026-08-08
+
+### Ajouté — Raffinements EDR (métrique, interpolation, GeoJSON)
+
+- **Distances métriques** pour `radius` et `corridor` : `within-units` /
+  `corridor-width-units` acceptent désormais `km`/`m` (en plus de `deg`). La
+  distance est alors calculée en **mètres** (projection équirectangulaire locale,
+  correcte à haute latitude via cos(lat)), et non plus en degrés euclidiens.
+  `area` reste géométrique (inclusion), non concernée. Helpers `geodist.go`.
+- **Interpolation bilinéaire au point** : `position?interpolation=bilinear`
+  échantillonne la valeur au point **exact** (via `xarray.InterpBilinear`) au lieu
+  du plus proche voisin ; le point interpolé est conservé comme coordonnée x/y
+  (PointSeries). Défaut inchangé (plus proche voisin).
+- **Négociation de contenu `f=geojson`** sur les endpoints passant par
+  `writeCoverage` (coverage, position, cube, area, corridor, radius) : sortie
+  **FeatureCollection GeoJSON** (un Point par cellule + valeurs en propriétés).
+  Complète `json`/`netcdf`/`zarr`. `Collection.GeoJSON`.
+- Tests : `TestPositionBilinear`, `TestGeoJSONOutput`, `TestCorridorMetric`,
+  `TestRadiusMetric`, `TestLengthMeters`, `TestBadFormat`.
+
 ## [0.17.0] - 2026-08-08
 
 ### Ajouté — EDR `instances`

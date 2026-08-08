@@ -14,36 +14,37 @@ import (
 // exprimé en degrés (défaut) ou converti depuis km / m (approximation sphérique
 // simple : 1° ≈ 111,32 km — sans correction de latitude).
 
-// radiusInDegrees convertit une valeur + unité en degrés (approximatif pour km/m).
-func radiusInDegrees(v float64, units string) (float64, error) {
-	switch strings.ToLower(strings.TrimSpace(units)) {
-	case "", "deg", "degree", "degrees":
-		return v, nil
-	case "km", "kilometre", "kilometres", "kilometer", "kilometers":
-		return v / 111.32, nil
-	case "m", "metre", "metres", "meter", "meters":
-		return v / 111320.0, nil
-	default:
-		return 0, fmt.Errorf("within-units %q non pris en charge (deg/km/m)", units)
-	}
-}
-
-// Radius restreint la collection au disque de rayon radiusDeg (degrés) centré sur
-// (cx, cy), puis masque (NaN) les cellules hors du disque.
-func (c *Collection) Radius(cx, cy, radiusDeg float64, p EDRParams) (*xarray.Dataset[float64], error) {
-	if radiusDeg <= 0 {
+// Radius restreint la collection au disque de rayon within (dans units :
+// deg/km/m) centré sur (cx, cy), puis masque (NaN) les cellules hors du disque.
+// En unité métrique (km/m), la distance est calculée en mètres (projection
+// équirectangulaire locale, correcte à haute latitude) ; en degrés, en distance
+// euclidienne sur les coordonnées.
+func (c *Collection) Radius(cx, cy, within float64, units string, p EDRParams) (*xarray.Dataset[float64], error) {
+	if within <= 0 {
 		return nil, fmt.Errorf("radius: rayon (within) > 0 requis")
+	}
+	meters, metric, err := lengthMeters(within, units)
+	if err != nil {
+		return nil, err
+	}
+	// Rayon en degrés pour l'emprise (bbox) : soit direct, soit converti.
+	radiusDeg := within
+	if metric {
+		radiusDeg = meters / metersPerDegLat // borne supérieure (lat ≤ lon en m/deg)
 	}
 	bbox := [4]float64{cx - radiusDeg, cy - radiusDeg, cx + radiusDeg, cy + radiusDeg}
 	ds, err := c.Query(QueryParams{Properties: p.SelectProperties, BBox: &bbox, Datetime: p.Datetime})
 	if err != nil {
 		return nil, err
 	}
-	r2 := radiusDeg * radiusDeg
-	return maskDataset(ds, c.XDim, c.YDim, func(x, y float64) bool {
+	keep := func(x, y float64) bool {
 		dx, dy := x-cx, y-cy
-		return dx*dx+dy*dy <= r2
-	})
+		return dx*dx+dy*dy <= within*within
+	}
+	if metric {
+		keep = func(x, y float64) bool { return distMeters(cx, cy, x, y) <= meters }
+	}
+	return maskDataset(ds, c.XDim, c.YDim, keep)
 }
 
 // parsePoint analyse un WKT POINT(lon lat) ou « lon,lat » en (lon, lat).

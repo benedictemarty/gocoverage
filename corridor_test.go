@@ -43,7 +43,7 @@ func gridColl(t *testing.T, n int) *Collection {
 func TestCorridorDiagonal(t *testing.T) {
 	c := gridColl(t, 7) // lon 0..6, lat 6..0
 	line := [][2]float64{{0, 0}, {6, 6}}
-	res, err := c.Corridor(line, 1.5, EDRParams{})
+	res, err := c.Corridor(line, 1.5, "", EDRParams{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,10 +60,10 @@ func TestCorridorDiagonal(t *testing.T) {
 		t.Errorf("tube diagonal devrait laisser des coins hors : %d dedans, %d hors", inside, outside)
 	}
 	// Erreurs.
-	if _, err := c.Corridor([][2]float64{{0, 0}}, 1, EDRParams{}); err == nil {
+	if _, err := c.Corridor([][2]float64{{0, 0}}, 1, "", EDRParams{}); err == nil {
 		t.Error("erreur attendue : < 2 points")
 	}
-	if _, err := c.Corridor(line, 0, EDRParams{}); err == nil {
+	if _, err := c.Corridor(line, 0, "", EDRParams{}); err == nil {
 		t.Error("erreur attendue : demi-largeur nulle")
 	}
 }

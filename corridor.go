@@ -36,28 +36,39 @@ func distToPolyline(x, y float64, line [][2]float64) float64 {
 	return best
 }
 
-// Corridor restreint la collection au tube de demi-largeur halfWidth autour de la
-// polyligne line, puis masque (NaN) les cellules hors du tube.
-func (c *Collection) Corridor(line [][2]float64, halfWidth float64, p EDRParams) (*xarray.Dataset[float64], error) {
+// Corridor restreint la collection au tube de demi-largeur halfWidth (dans units :
+// deg/km/m) autour de la polyligne line, puis masque (NaN) les cellules hors du
+// tube. En unité métrique, la distance à la polyligne est calculée en mètres.
+func (c *Collection) Corridor(line [][2]float64, halfWidth float64, units string, p EDRParams) (*xarray.Dataset[float64], error) {
 	if len(line) < 2 {
 		return nil, fmt.Errorf("corridor: au moins 2 points requis")
 	}
 	if halfWidth <= 0 {
 		return nil, fmt.Errorf("corridor: demi-largeur (corridor-width) > 0 requise")
 	}
-	// Emprise de la polyligne élargie de halfWidth.
+	meters, metric, err := lengthMeters(halfWidth, units)
+	if err != nil {
+		return nil, err
+	}
+	// Marge d'emprise en degrés (borne supérieure en métrique).
+	marginDeg := halfWidth
+	if metric {
+		marginDeg = meters / metersPerDegLat
+	}
 	minx, miny := math.Inf(1), math.Inf(1)
 	maxx, maxy := math.Inf(-1), math.Inf(-1)
 	for _, pt := range line {
 		minx, maxx = math.Min(minx, pt[0]), math.Max(maxx, pt[0])
 		miny, maxy = math.Min(miny, pt[1]), math.Max(maxy, pt[1])
 	}
-	bbox := [4]float64{minx - halfWidth, miny - halfWidth, maxx + halfWidth, maxy + halfWidth}
+	bbox := [4]float64{minx - marginDeg, miny - marginDeg, maxx + marginDeg, maxy + marginDeg}
 	ds, err := c.Query(QueryParams{Properties: p.SelectProperties, BBox: &bbox, Datetime: p.Datetime})
 	if err != nil {
 		return nil, err
 	}
-	return maskDataset(ds, c.XDim, c.YDim, func(x, y float64) bool {
-		return distToPolyline(x, y, line) <= halfWidth
-	})
+	keep := func(x, y float64) bool { return distToPolyline(x, y, line) <= halfWidth }
+	if metric {
+		keep = func(x, y float64) bool { return distMetersToPolyline(x, y, line) <= meters }
+	}
+	return maskDataset(ds, c.XDim, c.YDim, keep)
 }

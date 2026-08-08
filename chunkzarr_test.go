@@ -1,6 +1,8 @@
 package gocoverage
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -121,17 +123,73 @@ func TestChunkedCollectionEndToEnd(t *testing.T) {
 	}
 }
 
-func TestZarrWindowUnsupportedFallback(t *testing.T) {
-	// Un store compressé n'est pas supporté par le lecteur élagué → erreur
-	// (l'appelant retombe sur LoadZarr).
-	dir := filepath.Join(t.TempDir(), "z")
-	coords := map[string][]float64{"latitude": {2, 1}, "longitude": {0, 1}}
-	da, _ := xarray.NewDataArray([]string{"latitude", "longitude"}, []int{2, 2}, []float64{0, 1, 2, 3}, coords, "t2m")
+// writeChunkedZarrComp écrit la grille 4×4 (chunks 2×2) avec un compresseur donné.
+func writeChunkedZarrComp(t *testing.T, dir string, comp xarray.ZarrCompression) {
+	t.Helper()
+	coords := map[string][]float64{"latitude": {4, 3, 2, 1}, "longitude": {0, 1, 2, 3}}
+	d := make([]float64, 16)
+	for i := range d {
+		d[i] = float64(i)
+	}
+	da, _ := xarray.NewDataArray([]string{"latitude", "longitude"}, []int{4, 4}, d, coords, "t2m")
+	da.Variable().SetAttr("units", "K")
 	ds, _ := xarray.NewDataset(map[string]*xarray.DataArray[float64]{"t2m": da})
-	if err := xarray.WriteDatasetZarrChunked(dir, ds, map[string]int{"latitude": 2, "longitude": 2}, xarray.ZarrZlib); err != nil {
-		t.Skip("compression zlib indisponible: " + err.Error())
+	if err := xarray.WriteDatasetZarrChunked(dir, ds, map[string]int{"latitude": 2, "longitude": 2}, comp); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestZarrWindowCompressed vérifie la lecture élaguée de stores compressés
+// (zlib, zstd) : bbox coin → 1 chunk lu, valeurs correctes.
+func TestZarrWindowCompressed(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		comp xarray.ZarrCompression
+	}{
+		{"zlib", xarray.ZarrZlib},
+		{"zstd", xarray.ZarrZstd},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "g")
+			writeChunkedZarrComp(t, dir, tc.comp)
+			r, err := OpenZarrWindow(dir, "longitude", "latitude")
+			if err != nil {
+				t.Fatalf("ouverture %s: %v", tc.name, err)
+			}
+			ds, err := r.ReadWindow(&[4]float64{0, 3, 1, 4})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if r.ChunksRead() != 1 {
+				t.Errorf("ChunksRead=%d, attendu 1 (élagage %s)", r.ChunksRead(), tc.name)
+			}
+			v, _ := ds.Get("t2m")
+			want := map[float64]bool{0: true, 1: true, 4: true, 5: true}
+			for _, x := range v.Data() {
+				if !want[x] {
+					t.Errorf("%s: valeur inattendue %v", tc.name, x)
+				}
+			}
+		})
+	}
+}
+
+// TestZarrWindowUnsupportedFallback : un compresseur non géré (blosc) est rejeté
+// à l'ouverture — l'appelant retombe alors sur LoadZarr (lecture complète).
+func TestZarrWindowUnsupportedFallback(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "g")
+	writeChunkedZarr(t, dir)
+	// Falsifie le compresseur de t2m en « blosc » (non supporté par le lecteur élagué).
+	zpath := filepath.Join(dir, "t2m", ".zarray")
+	b, _ := os.ReadFile(zpath)
+	var m map[string]interface{}
+	_ = json.Unmarshal(b, &m)
+	m["compressor"] = map[string]interface{}{"id": "blosc", "cname": "lz4"}
+	nb, _ := json.Marshal(m)
+	if err := os.WriteFile(zpath, nb, 0o644); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := OpenZarrWindow(dir, "longitude", "latitude"); err == nil {
-		t.Error("un store compressé devrait être rejeté par le lecteur élagué")
+		t.Error("un store blosc devrait être rejeté par le lecteur élagué")
 	}
 }

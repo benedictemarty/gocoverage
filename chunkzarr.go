@@ -1,9 +1,12 @@
 package gocoverage
 
 import (
+	"bytes"
+	"compress/zlib"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -12,7 +15,11 @@ import (
 	"strings"
 
 	"github.com/benedictemarty/xarray"
+	"github.com/klauspost/compress/zstd"
 )
+
+// zstdDec : décodeur zstd partagé (DecodeAll est sûr en concurrence).
+var zstdDec, _ = zstd.NewReader(nil)
 
 // Lecture Zarr v2 « élaguée par chunks » : pour une requête à emprise (bbox), on
 // ne lit que les fichiers-chunks qui recouvrent la fenêtre demandée — vraie
@@ -21,7 +28,7 @@ import (
 // xarray-go réalise cet élagage en interne (zarrRowSource) mais ne l'expose pas
 // (types non exportés, ChunkZarr ne rend qu'un LazyArray sans accès aux blocs).
 // D'où ce mini-lecteur, volontairement borné : Zarr v2, dtype <f8 (float64
-// little-endian), ordre C, compressor null, variables de données 2D [y, x]. Tout
+// little-endian), ordre C, compresseur none/zlib/zstd, variables de données 2D [y, x]. Tout
 // écart (v3, compressé, >2D, autre dtype) renvoie une erreur — l'appelant peut
 // alors retomber sur LoadZarr (lecture complète).
 
@@ -110,7 +117,7 @@ func (r *ZarrWindowReader) Coords() (x, y []float64) {
 }
 
 // LoadChunkedZarr construit une Collection à lecture élaguée par chunks depuis un
-// store Zarr v2 (2D lon/lat, <f8, non compressé). Les requêtes à emprise ne
+// store Zarr v2 (2D lon/lat, <f8, none/zlib/zstd). Les requêtes à emprise ne
 // lisent que les chunks nécessaires (via Collection.Window) ; les accès sans
 // emprise (métadonnées) matérialisent la grille complète à la demande.
 //
@@ -198,6 +205,10 @@ func (r *ZarrWindowReader) ReadWindow(bbox *[4]float64) (*xarray.Dataset[float64
 func (r *ZarrWindowReader) readVarWindow(v zvarMin, r0, r1, c0, c1 int) ([]float64, error) {
 	C := v.meta.Shape[1]
 	cr, cc := v.meta.Chunks[0], v.meta.Chunks[1]
+	comp, err := compressorID(v.meta.Compressor)
+	if err != nil {
+		return nil, err
+	}
 	nr, nc := r1-r0, c1-c0
 	out := make([]float64, nr*nc)
 	for i := range out {
@@ -207,7 +218,7 @@ func (r *ZarrWindowReader) readVarWindow(v zvarMin, r0, r1, c0, c1 int) ([]float
 	ccStart, ccEnd := c0/cc, (c1-1)/cc
 	for rc := rcStart; rc <= rcEnd; rc++ {
 		for cci := ccStart; cci <= ccEnd; cci++ {
-			block, present, err := r.readChunk2D(v.name, rc, cci, cr*cc)
+			block, present, err := r.readChunk2D(v.name, comp, rc, cci, cr*cc)
 			if err != nil {
 				return nil, err
 			}
@@ -232,8 +243,9 @@ func (r *ZarrWindowReader) readVarWindow(v zvarMin, r0, r1, c0, c1 int) ([]float
 	return out, nil
 }
 
-// readChunk2D lit le fichier-chunk "rc.cc" et le décode en n float64 (<f8 LE).
-func (r *ZarrWindowReader) readChunk2D(varName string, rc, cc, n int) ([]float64, bool, error) {
+// readChunk2D lit le fichier-chunk "rc.cc", le décompresse (comp) et le décode en
+// n float64 (<f8 LE).
+func (r *ZarrWindowReader) readChunk2D(varName, comp string, rc, cc, n int) ([]float64, bool, error) {
 	key := strconv.Itoa(rc) + "." + strconv.Itoa(cc)
 	raw, err := os.ReadFile(filepath.Join(r.dir, varName, key))
 	if err != nil {
@@ -243,13 +255,21 @@ func (r *ZarrWindowReader) readChunk2D(varName string, rc, cc, n int) ([]float64
 		return nil, false, err
 	}
 	r.chunksRead++
-	return decodeF8LE(raw, n)
+	dec, err := decompress(comp, raw)
+	if err != nil {
+		return nil, false, err
+	}
+	return decodeF8LE(dec, n)
 }
 
 // readArray1D lit intégralement un tableau 1D (coordonnée).
 func (r *ZarrWindowReader) readArray1D(name string, meta zarrayMetaMin) ([]float64, error) {
 	n := meta.Shape[0]
 	cr := meta.Chunks[0]
+	comp, err := compressorID(meta.Compressor)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]float64, n)
 	for i := range out {
 		out[i] = math.NaN()
@@ -263,7 +283,11 @@ func (r *ZarrWindowReader) readArray1D(name string, meta zarrayMetaMin) ([]float
 			}
 			return nil, err
 		}
-		block, _, err := decodeF8LE(raw, cr)
+		dec, err := decompress(comp, raw)
+		if err != nil {
+			return nil, err
+		}
+		block, _, err := decodeF8LE(dec, cr)
 		if err != nil {
 			return nil, err
 		}
@@ -289,10 +313,48 @@ func supported(m zarrayMetaMin) error {
 	if m.Order != "" && m.Order != "C" {
 		return fmt.Errorf("seul l'ordre C est supporté (%q)", m.Order)
 	}
-	if len(m.Compressor) > 0 && string(m.Compressor) != "null" {
-		return fmt.Errorf("chunks compressés non supportés par le lecteur élagué")
+	id, err := compressorID(m.Compressor)
+	if err != nil {
+		return err
+	}
+	if id != "" && id != "zlib" && id != "zstd" {
+		return fmt.Errorf("compresseur %q non supporté par le lecteur élagué (none/zlib/zstd)", id)
 	}
 	return nil
+}
+
+// compressorID extrait l'identifiant du compresseur d'un .zarray (""=aucun).
+func compressorID(raw json.RawMessage) (string, error) {
+	s := strings.TrimSpace(string(raw))
+	if len(raw) == 0 || s == "null" {
+		return "", nil
+	}
+	var c struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(raw, &c); err != nil {
+		return "", fmt.Errorf("compresseur illisible: %w", err)
+	}
+	return c.ID, nil
+}
+
+// decompress applique le décodeur du compresseur (none/zlib/zstd) à un chunk brut.
+func decompress(id string, raw []byte) ([]byte, error) {
+	switch id {
+	case "":
+		return raw, nil
+	case "zlib":
+		zr, err := zlib.NewReader(bytes.NewReader(raw))
+		if err != nil {
+			return nil, fmt.Errorf("zlib: %w", err)
+		}
+		defer zr.Close()
+		return io.ReadAll(zr)
+	case "zstd":
+		return zstdDec.DecodeAll(raw, nil)
+	default:
+		return nil, fmt.Errorf("compresseur %q non supporté", id)
+	}
 }
 
 func decodeF8LE(raw []byte, n int) ([]float64, bool, error) {

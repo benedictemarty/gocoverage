@@ -5,6 +5,24 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.23.0] - 2026-08-08
+
+### Ajouté — lecture élaguée des chunks compressés (zlib, zstd)
+
+- Le lecteur Zarr élagué (`ZarrWindowReader`) décompresse désormais les chunks
+  **zlib** (bibliothèque standard) et **zstd** (`klauspost/compress`, promu en
+  dépendance directe). L'élagage par bbox s'applique donc aux stores compressés —
+  cas de loin le plus courant en production (un lecteur « non compressé seulement »
+  n'était quasi jamais applicable).
+- Décodeur par variable déduit du `.zarray` (`compressorID`) ; les coordonnées
+  compressées sont également gérées. Compresseur inconnu (**blosc**, lz4…) →
+  erreur à l'ouverture, l'appelant retombe sur `LoadZarr`.
+- Périmètre du lecteur élagué : Zarr v2, `<f8`, ordre C, **none/zlib/zstd**, 2D
+  `[lat, lon]`. Blosc (défaut zarr-python) reste hors périmètre (conteneur + LZ4/
+  shuffle non réimplémentés ici).
+- Tests : lecture élaguée zlib **et** zstd (bbox coin → 1 chunk lu, valeurs
+  correctes) ; rejet d'un `.zarray` blosc.
+
 ## [0.22.0] - 2026-08-08
 
 ### Ajouté — lecture Zarr élaguée par chunks (vraie E/S partielle)

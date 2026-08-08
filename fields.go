@@ -30,12 +30,26 @@ func (c *Collection) Fields() []Field {
 		attrs := da.Variable().Attrs()
 		out = append(out, Field{
 			Name:  name,
-			Type:  "float", // Dataset[float64]
+			Type:  fieldTypeFromAttrs(attrs),
 			Title: attrs["long_name"],
 			Unit:  attrs["units"],
 		})
 	}
 	return out
+}
+
+// fieldTypeFromAttrs déduit le type d'un champ. Le stockage est float64, mais un
+// jeu de données peut déclarer un type logique via l'attribut `dtype`
+// (remarque J : ne pas forcer « float » pour des champs entiers/catégoriels).
+func fieldTypeFromAttrs(attrs map[string]string) string {
+	switch strings.ToLower(strings.TrimSpace(attrs["dtype"])) {
+	case "int", "integer", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64":
+		return "integer"
+	case "str", "string", "category", "categorical":
+		return "string"
+	default:
+		return "float"
+	}
 }
 
 // fieldsMap indexe les champs par nom.

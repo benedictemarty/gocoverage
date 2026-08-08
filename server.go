@@ -37,8 +37,14 @@ func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// writeErr émet une réponse d'erreur au format d'exception OGC API
+// (`{code, description}`), tout en conservant `error` pour rétro-compatibilité.
 func writeErr(w http.ResponseWriter, code int, msg string) {
-	writeJSON(w, code, map[string]string{"error": msg})
+	writeJSON(w, code, map[string]string{
+		"code":        http.StatusText(code),
+		"description": msg,
+		"error":       msg,
+	})
 }
 
 func (s *Server) landing(w http.ResponseWriter, r *http.Request) {
@@ -81,6 +87,12 @@ func (s *Server) collectionRoutes(w http.ResponseWriter, r *http.Request) {
 // handler. Factorisé pour être réutilisé par les instances (mêmes actions sur une
 // sous-collection).
 func (s *Server) dispatchAction(w http.ResponseWriter, r *http.Request, c *Collection, action string) {
+	// Rejet d'un CRS de requête non supporté (remarque B : pas de reprojection ;
+	// un crs/bbox-crs inconnu doit produire une erreur, non être ignoré).
+	if msg := checkRequestCRS(c, r.URL.Query()); msg != "" {
+		writeErr(w, 400, msg)
+		return
+	}
 	switch action {
 	case "":
 		s.describe(w, r, c)
@@ -328,28 +340,11 @@ func parseLineString(s string) ([][2]float64, error) {
 	return pts, nil
 }
 
-// describe renvoie la description d'une collection : métadonnées, champs
+// describe renvoie la description conforme d'une collection : métadonnées OGC
+// Common (extent, crs), découverte EDR (parameter_names, data_queries), champs
 // (get_fields) et propriétés de couverture (coverage_properties).
 func (s *Server) describe(w http.ResponseWriter, r *http.Request, c *Collection) {
-	writeJSON(w, 200, map[string]interface{}{
-		"id":         c.ID,
-		"title":      c.Title,
-		"parameters": c.Fields(),
-		"properties": c.Properties(),
-		"links": []map[string]string{
-			{"rel": "coverage", "href": "/collections/" + c.ID + "/coverage"},
-			{"rel": "http://www.opengis.net/def/rel/ogc/1.0/coverage-domainset", "href": "/collections/" + c.ID + "/coverage/domainset"},
-			{"rel": "http://www.opengis.net/def/rel/ogc/1.0/coverage-rangetype", "href": "/collections/" + c.ID + "/coverage/rangetype"},
-			{"rel": "position", "href": "/collections/" + c.ID + "/position"},
-			{"rel": "cube", "href": "/collections/" + c.ID + "/cube"},
-			{"rel": "trajectory", "href": "/collections/" + c.ID + "/trajectory"},
-			{"rel": "area", "href": "/collections/" + c.ID + "/area"},
-			{"rel": "corridor", "href": "/collections/" + c.ID + "/corridor"},
-			{"rel": "radius", "href": "/collections/" + c.ID + "/radius"},
-			{"rel": "locations", "href": "/collections/" + c.ID + "/locations"},
-			{"rel": "instances", "href": "/collections/" + c.ID + "/instances"},
-		},
-	})
+	writeJSON(w, 200, c.collectionDoc())
 }
 
 // coverage : requête OGC Coverages (query) → CoverageJSON.
@@ -493,7 +488,7 @@ func parseZ(s string) (*float64, error) {
 // `f` — pendant de query(format_=…) de pygeoapi. Défaut : CoverageJSON.
 // Formats : json/covjson (CoverageJSON), netcdf/nc (natif netCDF).
 func (s *Server) writeCoverage(w http.ResponseWriter, r *http.Request, c *Collection, ds *xarray.Dataset[float64]) {
-	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get("f"))) {
+	switch negotiateFormat(r) {
 	case "", "json", "covjson", "coveragejson":
 		b, err := c.CoverageJSON(ds)
 		if err != nil {
@@ -531,7 +526,7 @@ func (s *Server) writeCoverage(w http.ResponseWriter, r *http.Request, c *Collec
 	case "geojson", "geoj", "geo+json":
 		b, err := c.GeoJSON(ds)
 		if err != nil {
-			writeErr(w, 500, "export geojson: "+err.Error())
+			writeErr(w, 400, "export geojson: "+err.Error())
 			return
 		}
 		w.Header().Set("Content-Type", "application/geo+json")

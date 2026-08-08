@@ -155,11 +155,25 @@ func (c *Collection) resolveAxis(name string) (string, error) {
 	return "", fmt.Errorf("axe inconnu: %q", name)
 }
 
-// selectVars restreint le Dataset aux variables demandées.
+// selectVars restreint le Dataset aux variables demandées. Un nom demandé qui
+// n'existe pas est une erreur (remarque G : un paramètre inconnu ne doit pas
+// être ignoré silencieusement, mais produire une 400).
 func selectVars(ds *xarray.Dataset[float64], names []string) (*xarray.Dataset[float64], error) {
+	exists := map[string]bool{}
+	for _, v := range ds.VarNames() {
+		exists[v] = true
+	}
 	keep := map[string]bool{}
+	var unknown []string
 	for _, n := range names {
+		if !exists[n] {
+			unknown = append(unknown, n)
+			continue
+		}
 		keep[n] = true
+	}
+	if len(unknown) > 0 {
+		return nil, fmt.Errorf("paramètre(s) inconnu(s): %s", strings.Join(unknown, ", "))
 	}
 	var drop []string
 	for _, v := range ds.VarNames() {

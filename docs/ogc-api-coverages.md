@@ -63,6 +63,23 @@ Un facteur `1` laisse l'axe intact. Le scaling s'applique **après** subset/bbox
 avant la sérialisation. C'est une réduction de résolution par agrégation, pas une
 interpolation.
 
+## Conformité & robustesse (v0.19)
+
+- **Découverte EDR** : `/collections/{id}` expose `extent`, `crs`,
+  `parameter_names` et `data_queries` — un client EDR découvre les requêtes sans
+  connaître les URLs à l'avance.
+- **CRS de requête** : `crs`/`bbox-crs`/`subset-crs` non supportés → **400**
+  (pas de reprojection ; réponse fausse silencieuse évitée). Synonymes CRS84 OK.
+- **Grilles irrégulières** : CoverageJSON (axe par valeurs) et `domainset`
+  (`IrregularAxis`) ne prétendent plus un pas constant inexistant.
+- **GeoJSON** : refuse (400) un Dataset multi-pas (temps/niveau) au lieu de le
+  tronquer ; sélectionner `datetime`/`z`.
+- **Paramètre inconnu** (`properties`/`parameter-name`) → **400**.
+- **Négociation** : `Accept` honoré à défaut de `?f=` ; erreurs au format
+  d'exception OGC (`{code, description}`).
+- **Distances** `radius`/`corridor` : `deg` = géométrie en espace de coordonnées
+  (cercle en degrés = ellipse au sol) ; `km`/`m` = distance-sol réelle.
+
 ## Ce qui n'est pas (encore) couvert
 
 - **Reprojection** (`crs`/`subset-crs` effectifs) : le CRS est décrit, non

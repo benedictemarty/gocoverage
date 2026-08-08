@@ -88,9 +88,11 @@ func (c *Collection) DomainSet() (map[string]interface{}, error) {
 	}
 
 	axisLabels := []string{"x", "y"}
+	// Axe régulier si le pas est constant, sinon axe irrégulier par coordonnées
+	// (remarque C : ne pas annoncer une résolution constante inexistante).
 	axes := []interface{}{
-		covRegularAxisDesc{Type: "RegularAxis", AxisLabel: "x", LowerBound: xv[0], UpperBound: xv[len(xv)-1], Resolution: axisResolution(xv)},
-		covRegularAxisDesc{Type: "RegularAxis", AxisLabel: "y", LowerBound: yv[0], UpperBound: yv[len(yv)-1], Resolution: axisResolution(yv)},
+		gridAxisDesc("x", xv),
+		gridAxisDesc("y", yv),
 	}
 	gridAxes := []interface{}{
 		covIndexAxis{Type: "IndexAxis", AxisLabel: "i", LowerBound: 0, UpperBound: len(xv) - 1},
@@ -139,6 +141,15 @@ func axisResolution(v []float64) float64 {
 		return 0
 	}
 	return (v[len(v)-1] - v[0]) / float64(len(v)-1)
+}
+
+// gridAxisDesc décrit un axe de grille : RegularAxis si le pas est constant,
+// sinon IrregularAxis (coordonnées explicites).
+func gridAxisDesc(label string, v []float64) interface{} {
+	if isRegularAxis(v) {
+		return covRegularAxisDesc{Type: "RegularAxis", AxisLabel: label, LowerBound: v[0], UpperBound: v[len(v)-1], Resolution: axisResolution(v)}
+	}
+	return covIrregularAxisDesc{Type: "IrregularAxis", AxisLabel: label, Coordinate: v}
 }
 
 // domainset : GET /collections/{id}/coverage/domainset.

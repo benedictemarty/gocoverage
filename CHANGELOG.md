@@ -5,6 +5,45 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.19.0] - 2026-08-08
+
+### Corrigé / durci — mise à niveau de conformité EDR & Coverages
+
+Traitement de l'ensemble des remarques de la revue interne EDR/Coverages.
+
+- **(A) Description de collection conforme** : `describe` émet désormais
+  l'`extent` (spatial + temporel ISO 8601), la liste `crs`, `itemType`, les
+  `parameter_names` (descripteurs EDR) et surtout les **`data_queries`** — la
+  collection devient réellement **découvrable** par un client EDR, au lieu de
+  simples liens maison. `metadata.go` (`collectionDoc`, `extentDoc`,
+  `parameterNames`, `dataQueries`).
+- **(B) CRS de requête contrôlé** : `crs`/`bbox-crs`/`subset-crs`/`coords-crs`
+  non supportés sont **rejetés (400)** au point de routage, au lieu d'être
+  ignorés silencieusement (pas de reprojection ⇒ réponse fausse évitée). Les
+  synonymes de CRS84 restent acceptés. `checkRequestCRS`, `crsParamSupported`.
+- **(C) Grilles irrégulières décrites comme telles** : CoverageJSON bascule sur
+  un axe **par valeurs** et le `domainset` sur un **`IrregularAxis`** quand le pas
+  x/y n'est pas constant (`isRegularAxis`, `regularOrValuesAxis`, `gridAxisDesc`)
+  — fini le pas constant annoncé à tort.
+- **(D) GeoJSON sans perte silencieuse** : `f=geojson` **refuse (400)** un Dataset
+  à plusieurs pas de temps/niveaux (au lieu de ne renvoyer que le premier),
+  avec un message invitant à sélectionner `datetime`/`z`.
+- **(G) Paramètre inconnu → 400** : `properties`/`parameter-name` désignant une
+  variable inexistante produit une erreur explicite (`selectVars`), au lieu d'un
+  filtrage silencieux.
+- **(H) Négociation de contenu par `Accept`** : à défaut de `?f=`, l'en-tête
+  `Accept` est honoré (`negotiateFormat`). Corps d'erreur au format d'exception
+  OGC (`{code, description}`, `error` conservé pour compat).
+- **(I) Instances dérivées du temps** : `Collection.InstancesFromTime()` construit
+  automatiquement une instance par pas de temps (plus de découpage manuel).
+- **(J) Types de champs** : `Fields` reflète un type **entier/catégoriel** déclaré
+  via l'attribut `dtype` (`fieldTypeFromAttrs`), au lieu de forcer `float`.
+- **(E) Distances** : le mode `deg` (défaut de `radius`/`corridor`) est une
+  géométrie **en espace de coordonnées** assumée (cercle en degrés = ellipse au
+  sol) ; pour une distance-sol correcte, utiliser `within-units=km|m` (déjà géré).
+  Documenté explicitement.
+- **(F) Tests axes ascendants/descendants** et 15 tests ajoutés couvrant A–J.
+
 ## [0.18.0] - 2026-08-08
 
 ### Ajouté — Raffinements EDR (métrique, interpolation, GeoJSON)

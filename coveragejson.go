@@ -127,8 +127,10 @@ func (c *Collection) CoverageJSON(ds *xarray.Dataset[float64]) ([]byte, error) {
 		axes["x"] = covValuesAxis{Values: []interface{}{xv[0]}}
 		axes["y"] = covValuesAxis{Values: []interface{}{yv[0]}}
 	} else {
-		axes["x"] = covRegularAxis{Start: xv[0], Stop: xv[len(xv)-1], Num: width}
-		axes["y"] = covRegularAxis{Start: yv[0], Stop: yv[len(yv)-1], Num: height}
+		// Grille régulière → axe {start, stop, num} ; sinon axe par valeurs
+		// explicites (remarque C : ne pas prétendre un pas constant inexistant).
+		axes["x"] = regularOrValuesAxis(xv)
+		axes["y"] = regularOrValuesAxis(yv)
 	}
 
 	referencing := []covReferencing{{
@@ -202,6 +204,39 @@ func (c *Collection) CoverageJSON(ds *xarray.Dataset[float64]) ([]byte, error) {
 		Ranges:     ranges,
 	}
 	return json.MarshalIndent(doc, "", "  ")
+}
+
+// isRegularAxis indique si les valeurs sont régulièrement espacées (pas constant
+// à une tolérance relative près). Sert à décider entre axe régulier
+// {start, stop, num} et axe par valeurs explicites (remarque C).
+func isRegularAxis(v []float64) bool {
+	if len(v) < 3 {
+		return true // 1 ou 2 points : toujours « réguliers »
+	}
+	step := v[1] - v[0]
+	if step == 0 {
+		return false
+	}
+	tol := math.Abs(step) * 1e-6
+	for i := 2; i < len(v); i++ {
+		if math.Abs((v[i]-v[i-1])-step) > tol {
+			return false
+		}
+	}
+	return true
+}
+
+// regularOrValuesAxis renvoie un axe régulier si le pas est constant, sinon un
+// axe par valeurs explicites.
+func regularOrValuesAxis(v []float64) interface{} {
+	if isRegularAxis(v) {
+		return covRegularAxis{Start: v[0], Stop: v[len(v)-1], Num: len(v)}
+	}
+	vals := make([]interface{}, len(v))
+	for i, x := range v {
+		vals[i] = x
+	}
+	return covValuesAxis{Values: vals}
 }
 
 // withNaNAsNull convertit un slice float64 en []interface{} avec null pour NaN

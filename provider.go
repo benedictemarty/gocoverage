@@ -9,6 +9,8 @@ package gocoverage
 
 import (
 	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/benedictemarty/xarray"
 )
@@ -61,6 +63,43 @@ func (c *Collection) InstanceByID(id string) (*Collection, bool) {
 		}
 	}
 	return nil, false
+}
+
+// InstancesFromTime dérive les instances depuis l'axe temporel : une
+// (sous-)collection par pas de temps (chacune un instantané sans axe temps),
+// identifiée par sa date ISO 8601 quand le temps est en secondes epoch, sinon
+// par sa valeur numérique (remarque I : ne plus imposer un découpage manuel).
+// Le résultat peut être affecté à c.Instances.
+func (c *Collection) InstancesFromTime() ([]*Collection, error) {
+	if c.TDim == "" {
+		return nil, fmt.Errorf("gocoverage: la collection %q n'a pas d'axe temporel", c.ID)
+	}
+	ts, err := c.Data.Coord(c.TDim)
+	if err != nil || len(ts) == 0 {
+		return nil, fmt.Errorf("gocoverage: axe temporel %q illisible", c.TDim)
+	}
+	iso := allEpochSeconds(ts)
+	out := make([]*Collection, 0, len(ts))
+	for i, t := range ts {
+		sub, err := dsMap(c.Data, c.TDim, func(da *xarray.DataArray[float64]) (*xarray.DataArray[float64], error) {
+			return da.Isel(c.TDim, i)
+		})
+		if err != nil {
+			return nil, fmt.Errorf("instance %d: %w", i, err)
+		}
+		id := strconv.FormatFloat(t, 'g', -1, 64)
+		title := id
+		if iso {
+			id = time.Unix(int64(t), 0).UTC().Format(time.RFC3339)
+			title = id
+		}
+		out = append(out, &Collection{
+			ID: id, Title: title,
+			XDim: c.XDim, YDim: c.YDim, ZDim: c.ZDim, CRS: c.CRS,
+			Data: sub,
+		})
+	}
+	return out, nil
 }
 
 // NamedLocation est un point nommé prédéfini d'une collection (EDR locations).

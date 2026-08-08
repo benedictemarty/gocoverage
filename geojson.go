@@ -15,7 +15,20 @@ import (
 // Adapté aux requêtes ponctuelles/petites emprises (position, radius, area…).
 
 // GeoJSON sérialise le Dataset en FeatureCollection GeoJSON.
+//
+// Un Feature Point est produit par cellule (x, y). Le GeoJSON ne modélise pas
+// les dimensions supplémentaires : si l'axe temporel ou vertical compte plus
+// d'un pas, la sortie serait tronquée au premier pas — c'est refusé (remarque D :
+// pas de perte de données silencieuse ; sélectionner un pas via datetime/z ou
+// utiliser un format multidimensionnel comme CoverageJSON/netCDF).
 func (c *Collection) GeoJSON(ds *xarray.Dataset[float64]) ([]byte, error) {
+	dims := ds.Dims()
+	if c.TDim != "" && dims[c.TDim] > 1 {
+		return nil, fmt.Errorf("geojson: %d pas de temps — sélectionnez un instant (datetime=…) ou utilisez f=covjson/netcdf", dims[c.TDim])
+	}
+	if c.ZDim != "" && dims[c.ZDim] > 1 {
+		return nil, fmt.Errorf("geojson: %d niveaux verticaux — sélectionnez un niveau (z=…) ou utilisez f=covjson/netcdf", dims[c.ZDim])
+	}
 	xs, err := ds.Coord(c.XDim)
 	if err != nil {
 		return nil, fmt.Errorf("coordonnée X %q: %w", c.XDim, err)

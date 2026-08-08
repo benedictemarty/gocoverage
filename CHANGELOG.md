@@ -5,6 +5,18 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.12.0] - 2026-08-08
+
+### Ajouté — EDR `area`
+
+- **Requête EDR `area`** : sous-ensemble par **polygone** arbitraire (WKT
+  `POLYGON((lon lat, …))`). Restreint à l'emprise du polygone puis masque (→ null)
+  les cellules dont le centre est **hors du polygone** (point-in-polygon, lancer
+  de rayon). Sortie CoverageJSON (grille). Options `datetime`/`parameter-name`.
+- Endpoint `GET /collections/{id}/area?coords=POLYGON((…))` + lien dans la
+  description. `Collection.Area`, `pointInPolygon`, `parsePolygon`. Tests :
+  point-in-polygon, masquage triangulaire, HTTP, parsing WKT.
+
 ## [0.11.0] - 2026-08-08
 
 ### Ajouté — EDR `trajectory`

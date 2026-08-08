@@ -83,9 +83,33 @@ func (s *Server) collectionRoutes(w http.ResponseWriter, r *http.Request) {
 		s.cube(w, r, c)
 	case "trajectory":
 		s.trajectory(w, r, c)
+	case "area":
+		s.area(w, r, c)
 	default:
 		writeErr(w, 404, "ressource inconnue: "+action)
 	}
+}
+
+// area : requête EDR area → CoverageJSON (grille masquée par le polygone).
+// Paramètre coords : WKT POLYGON((lon lat, …)). Options : datetime, parameter-name.
+func (s *Server) area(w http.ResponseWriter, r *http.Request, c *Collection) {
+	q := r.URL.Query()
+	ring, err := parsePolygon(q.Get("coords"))
+	if err != nil {
+		writeErr(w, 400, "coords invalide: "+err.Error())
+		return
+	}
+	dt, err := s.parseDatetimeParam(q.Get("datetime"), c)
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	ds, err := c.Area(ring, EDRParams{SelectProperties: parseList(q.Get("parameter-name")), Datetime: dt})
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	s.writeCoverage(w, r, c, ds)
 }
 
 // trajectory : requête EDR trajectory → CoverageJSON (domaine Trajectory).
@@ -169,6 +193,7 @@ func (s *Server) describe(w http.ResponseWriter, r *http.Request, c *Collection)
 			{"rel": "position", "href": "/collections/" + c.ID + "/position"},
 			{"rel": "cube", "href": "/collections/" + c.ID + "/cube"},
 			{"rel": "trajectory", "href": "/collections/" + c.ID + "/trajectory"},
+			{"rel": "area", "href": "/collections/" + c.ID + "/area"},
 		},
 	})
 }

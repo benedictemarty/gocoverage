@@ -5,6 +5,20 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.11.0] - 2026-08-08
+
+### Ajouté — EDR `trajectory`
+
+- **Requête EDR `trajectory`** : échantillonne les paramètres le long d'une
+  **polyligne** (route), au plus proche voisin, avec `datetime`/`z`/`parameter-name`
+  optionnels. Sortie **CoverageJSON de domaine `Trajectory`** (axe `composite` de
+  tuples `[x, y]`). Utile pour un profil météo le long d'une route (aviation).
+- Endpoint `GET /collections/{id}/trajectory?coords=LINESTRING(lon lat, …)`
+  (WKT LINESTRING ou repli `lon,lat;lon,lat`). Lien ajouté à la description de
+  collection.
+- `Collection.Trajectory` (échantillonnage) et `Collection.TrajectoryCoverageJSON`.
+  Tests : échantillonnage diagonal, HTTP, parsing WKT/repli.
+
 ## [0.10.0] - 2026-08-07
 
 ### Sprint « parité pygeoapi #9 » — résolution et durée temporelles (ISO 8601)

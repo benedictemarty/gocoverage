@@ -81,9 +81,79 @@ func (s *Server) collectionRoutes(w http.ResponseWriter, r *http.Request) {
 		s.position(w, r, c)
 	case "cube":
 		s.cube(w, r, c)
+	case "trajectory":
+		s.trajectory(w, r, c)
 	default:
 		writeErr(w, 404, "ressource inconnue: "+action)
 	}
+}
+
+// trajectory : requête EDR trajectory → CoverageJSON (domaine Trajectory).
+// Paramètre coords : WKT LINESTRING(lon lat, lon lat, …). Options : datetime, z,
+// parameter-name.
+func (s *Server) trajectory(w http.ResponseWriter, r *http.Request, c *Collection) {
+	q := r.URL.Query()
+	pts, err := parseLineString(q.Get("coords"))
+	if err != nil {
+		writeErr(w, 400, "coords invalide: "+err.Error())
+		return
+	}
+	dt, err := s.parseDatetimeParam(q.Get("datetime"), c)
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	z, err := parseZ(q.Get("z"))
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	b, err := c.TrajectoryCoverageJSON(pts, EDRParams{
+		SelectProperties: parseList(q.Get("parameter-name")),
+		Datetime:         dt,
+		Z:                z,
+	})
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/prs.coverage+json")
+	w.WriteHeader(200)
+	_, _ = w.Write(b)
+}
+
+// parseLineString analyse une géométrie WKT LINESTRING(lon lat, lon lat, …) en
+// une liste de points {lon, lat}. Accepte aussi une simple liste
+// « lon,lat;lon,lat;… » comme repli.
+func parseLineString(s string) ([][2]float64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, fmt.Errorf("coords manquant")
+	}
+	sep := byte(',') // WKT : points séparés par des virgules (lon lat, lon lat)
+	if strings.HasPrefix(strings.ToUpper(s), "LINESTRING") {
+		open := strings.IndexByte(s, '(')
+		if open < 0 || !strings.HasSuffix(s, ")") {
+			return nil, fmt.Errorf("WKT LINESTRING mal formé")
+		}
+		s = s[open+1 : len(s)-1]
+	} else {
+		sep = ';' // repli : points séparés par des « ; » (lon,lat;lon,lat)
+	}
+	var pts [][2]float64
+	for _, tok := range strings.Split(s, string(sep)) {
+		f := strings.FieldsFunc(strings.TrimSpace(tok), func(r rune) bool { return r == ' ' || r == ',' })
+		if len(f) != 2 {
+			return nil, fmt.Errorf("point invalide %q (attendu « lon lat »)", tok)
+		}
+		lon, err1 := strconv.ParseFloat(f[0], 64)
+		lat, err2 := strconv.ParseFloat(f[1], 64)
+		if err1 != nil || err2 != nil {
+			return nil, fmt.Errorf("coordonnées non numériques dans %q", tok)
+		}
+		pts = append(pts, [2]float64{lon, lat})
+	}
+	return pts, nil
 }
 
 // describe renvoie la description d'une collection : métadonnées, champs
@@ -98,6 +168,7 @@ func (s *Server) describe(w http.ResponseWriter, r *http.Request, c *Collection)
 			{"rel": "coverage", "href": "/collections/" + c.ID + "/coverage"},
 			{"rel": "position", "href": "/collections/" + c.ID + "/position"},
 			{"rel": "cube", "href": "/collections/" + c.ID + "/cube"},
+			{"rel": "trajectory", "href": "/collections/" + c.ID + "/trajectory"},
 		},
 	})
 }

@@ -25,6 +25,18 @@ type Collection struct {
 	ZDim  string // dimension verticale (ex. "z"/"level"/"height"), "" si absente
 	CRS   CRS    // système de coordonnées ; zéro-valeur = CRS84
 	Data  *xarray.Dataset[float64]
+
+	// Locations : points nommés prédéfinis (ex. aéroports, stations) exposés par
+	// la requête EDR « locations ». Clé = identifiant (ex. code OACI), valeur =
+	// {lon, lat}. Optionnel.
+	Locations []NamedLocation
+}
+
+// NamedLocation est un point nommé prédéfini d'une collection (EDR locations).
+type NamedLocation struct {
+	ID       string
+	Name     string
+	Lon, Lat float64
 }
 
 // Params renvoie les noms des paramètres (variables) exposés par la collection.

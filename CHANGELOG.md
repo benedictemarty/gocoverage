@@ -5,6 +5,22 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.16.0] - 2026-08-08
+
+### Ajouté — EDR `locations`
+
+- **Requête EDR `locations`** : points nommés prédéfinis (aéroports, stations…).
+  Champ optionnel `Collection.Locations` (`[]NamedLocation{ID, Name, Lon, Lat}`).
+  - `GET /collections/{id}/locations` → **FeatureCollection GeoJSON** listant les
+    points nommés.
+  - `GET /collections/{id}/locations/{locationId}` → donnée au point (au plus
+    proche voisin, via `Position`) en **CoverageJSON** ; location inconnue → 404.
+    Options `datetime`/`z`/`parameter-name`.
+- Cas aviation : interroger la météo d'un aérodrome par son **code OACI** plutôt
+  que par coordonnées. `Collection.LocationsGeoJSON`, `LocationByID`,
+  `LocationCoverageJSON`. Lien ajouté à la description. Tests : liste, extraction,
+  404, HTTP.
+
 ## [0.15.0] - 2026-08-08
 
 ### Ajouté — EDR `radius`

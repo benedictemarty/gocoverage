@@ -95,9 +95,54 @@ func (s *Server) collectionRoutes(w http.ResponseWriter, r *http.Request) {
 		s.corridor(w, r, c)
 	case "radius":
 		s.radius(w, r, c)
+	case "locations":
+		s.locations(w, r, c)
 	default:
+		if strings.HasPrefix(action, "locations/") {
+			s.locationByID(w, r, c, strings.TrimPrefix(action, "locations/"))
+			return
+		}
 		writeErr(w, 404, "ressource inconnue: "+action)
 	}
+}
+
+// locations : liste des points nommés de la collection (FeatureCollection GeoJSON).
+func (s *Server) locations(w http.ResponseWriter, r *http.Request, c *Collection) {
+	b, err := c.LocationsGeoJSON()
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/geo+json")
+	w.WriteHeader(200)
+	_, _ = w.Write(b)
+}
+
+// locationByID : données au point nommé locID (EDR locations/{locationId}).
+func (s *Server) locationByID(w http.ResponseWriter, r *http.Request, c *Collection, locID string) {
+	q := r.URL.Query()
+	dt, err := s.parseDatetimeParam(q.Get("datetime"), c)
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	z, err := parseZ(q.Get("z"))
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	b, err := c.LocationCoverageJSON(locID, EDRParams{
+		SelectProperties: parseList(q.Get("parameter-name")),
+		Datetime:         dt,
+		Z:                z,
+	})
+	if err != nil {
+		writeErr(w, 404, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/prs.coverage+json")
+	w.WriteHeader(200)
+	_, _ = w.Write(b)
 }
 
 // radius : requête EDR radius → CoverageJSON (grille masquée par le disque).
@@ -267,6 +312,7 @@ func (s *Server) describe(w http.ResponseWriter, r *http.Request, c *Collection)
 			{"rel": "area", "href": "/collections/" + c.ID + "/area"},
 			{"rel": "corridor", "href": "/collections/" + c.ID + "/corridor"},
 			{"rel": "radius", "href": "/collections/" + c.ID + "/radius"},
+			{"rel": "locations", "href": "/collections/" + c.ID + "/locations"},
 		},
 	})
 }

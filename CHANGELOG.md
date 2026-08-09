@@ -5,6 +5,25 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.37.0] - 2026-08-09
+
+### Ajouté — rendu HTML navigable (classe de conformité « html »)
+
+- **Négociation HTML** (`?f=html` ou en-tête `Accept: text/html`) sur les
+  endpoints principaux : accueil `/`, `/collections`, `/collections/{id}`,
+  `/collections/{id}/items`, `/conformance`. Les autres formats et le défaut JSON
+  restent inchangés (un client sans `Accept: text/html` obtient toujours du JSON).
+- Pages minimales mais **navigables** : barre de navigation, table des
+  collections (liens cliquables), description d'une collection avec **aperçu carte**
+  (`<img>` vers `/map`) et liens (items, coverage, tuiles, queryables), table des
+  entités avec propriétés et **pagination** (`prev`/`next`), liste des classes de
+  conformité. Les liens internes conservent `f=html`. Gabarits `html/template`
+  (échappement automatique).
+- **Conformance** : classes `ogcapi-common-1/…/html` et `ogcapi-features-1/…/html`.
+- Tests : négociation (HTML vs JSON par défaut), rendu des pages principales,
+  aperçu carte + liens de la page collection, table d'entités, annonce de
+  conformité.
+
 ## [0.36.0] - 2026-08-09
 
 ### Ajouté — tri des entités sur /items (extension `sortby`)

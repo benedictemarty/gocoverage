@@ -61,6 +61,10 @@ propriétés via `/collections/{id}/queryables`. Tri par propriété via
 chunks), `LoadPyramidZarr` (aperçus multi-résolution), `LoadGrib` (GRIB2) +
 `ConvertGribToZarr` / `cmd/grib2zarr`.
 
+**HTML navigable** : accueil, collections, description, entités et conformance
+sont rendus en HTML via `?f=html` ou `Accept: text/html` (classe de conformité
+`html`) — API explorable au navigateur, avec aperçu carte et pagination.
+
 **Passage à l'échelle** : `MemProvider` (tout en mémoire) ou `LazyFileProvider`
 (résidence RAM bornée par LRU) ; les collections chunkées ne lisent que les
 chunks recouvrant l'emprise/plage temporelle demandée, métadonnées comprises

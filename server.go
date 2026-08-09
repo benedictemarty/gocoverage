@@ -55,6 +55,15 @@ func (s *Server) landing(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if wantsHTML(r) {
+		landingHTML(w, "Serveur de couvertures reproduisant le provider xarray de pygeoapi",
+			[]htmlLink{
+				{"data (collections)", "/collections?f=html"},
+				{"conformance", "/conformance?f=html"},
+				{"service-desc (OpenAPI)", "/api"},
+			})
+		return
+	}
 	writeJSON(w, 200, map[string]interface{}{
 		"title":       "gocoverage — OGC API Coverages / EDR (xarray-go)",
 		"description": "Serveur de couvertures reproduisant le provider xarray de pygeoapi",
@@ -67,6 +76,10 @@ func (s *Server) landing(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) collections(w http.ResponseWriter, r *http.Request) {
+	if wantsHTML(r) {
+		collectionsHTML(w, s.prov.Collections())
+		return
+	}
 	writeJSON(w, 200, map[string]interface{}{"collections": s.prov.Collections()})
 }
 
@@ -367,6 +380,10 @@ func parseLineString(s string) ([][2]float64, error) {
 // Common (extent, crs), découverte EDR (parameter_names, data_queries), champs
 // (get_fields) et propriétés de couverture (coverage_properties).
 func (s *Server) describe(w http.ResponseWriter, r *http.Request, c *Collection) {
+	if wantsHTML(r) {
+		collectionHTML(w, c)
+		return
+	}
 	writeJSON(w, 200, c.collectionDoc())
 }
 

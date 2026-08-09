@@ -416,12 +416,21 @@ func (s *Server) items(w http.ResponseWriter, r *http.Request, c *Collection) {
 		writeErr(w, 400, err.Error())
 		return
 	}
+	links := itemsLinks(c.ID, q, p, matched)
+	if wantsHTML(r) {
+		hlinks := make([]htmlLink, len(links))
+		for i, l := range links {
+			hlinks[i] = htmlLink{Rel: l["rel"], Href: l["href"]}
+		}
+		itemsHTML(w, c.ID, features, matched, hlinks)
+		return
+	}
 	fc := map[string]interface{}{
 		"type":           "FeatureCollection",
 		"features":       features,
 		"numberMatched":  matched,
 		"numberReturned": len(features),
-		"links":          itemsLinks(c.ID, q, p, matched),
+		"links":          links,
 	}
 	b, _ := json.MarshalIndent(fc, "", "  ")
 	w.Header().Set("Content-Type", "application/geo+json")

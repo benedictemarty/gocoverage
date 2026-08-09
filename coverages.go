@@ -24,7 +24,9 @@ import (
 func conformanceClasses() []string {
 	return []string{
 		"http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/core",
+		"http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/html",
 		"http://www.opengis.net/spec/ogcapi-common-2/1.0/conf/collections",
+		"http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/html",
 		"http://www.opengis.net/spec/ogcapi-coverages-1/1.0/conf/core",
 		"http://www.opengis.net/spec/ogcapi-coverages-1/1.0/conf/coverage",
 		"http://www.opengis.net/spec/ogcapi-coverages-1/1.0/conf/coverage-subset",
@@ -108,6 +110,10 @@ func (s *Server) openapi(w http.ResponseWriter, r *http.Request) {
 
 // conformance : GET /conformance (OGC API - Common).
 func (s *Server) conformance(w http.ResponseWriter, r *http.Request) {
+	if wantsHTML(r) {
+		conformanceHTML(w, conformanceClasses())
+		return
+	}
 	writeJSON(w, 200, map[string]interface{}{"conformsTo": conformanceClasses()})
 }
 

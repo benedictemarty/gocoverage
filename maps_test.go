@@ -102,6 +102,54 @@ func TestMapBadParams(t *testing.T) {
 	}
 }
 
+// TestMapBilinear : interpolation=bilinear produit une image lissée valide.
+func TestMapBilinear(t *testing.T) {
+	srv := NewServer(demoProvider(t))
+	rec := doGET(t, srv, "/collections/demo/map?width=40&height=30&properties=t2m&interpolation=bilinear")
+	if rec.Code != 200 {
+		t.Fatalf("code = %d (%s)", rec.Code, rec.Body.String())
+	}
+	img, err := png.Decode(bytes.NewReader(rec.Body.Bytes()))
+	if err != nil {
+		t.Fatalf("décodage png: %v", err)
+	}
+	if b := img.Bounds(); b.Dx() != 40 || b.Dy() != 30 {
+		t.Fatalf("dimensions = %dx%d, attendu 40x30", b.Dx(), b.Dy())
+	}
+}
+
+// TestBracketAxis : encadrement d'une cible sur axe croissant et décroissant.
+func TestBracketAxis(t *testing.T) {
+	asc := []float64{0, 1, 2, 3}
+	b := bracketAxis(asc, 1.5)
+	if !b.ok || b.i0 != 1 || b.i1 != 2 || b.f < 0.49 || b.f > 0.51 {
+		t.Fatalf("asc: %+v", b)
+	}
+	desc := []float64{45, 44, 43}
+	b = bracketAxis(desc, 43.5)
+	if !b.ok || b.i0 != 1 || b.i1 != 2 || b.f < 0.49 || b.f > 0.51 {
+		t.Fatalf("desc: %+v", b)
+	}
+	if bracketAxis(asc, 9).ok {
+		t.Fatal("cible hors axe devrait être ok=false")
+	}
+}
+
+// TestPalettes : chaque palette nommée rend une image valide.
+func TestPalettes(t *testing.T) {
+	srv := NewServer(demoProvider(t))
+	for _, p := range []string{"viridis", "plasma", "magma", "inferno", "turbo", "coolwarm", "grayscale"} {
+		rec := doGET(t, srv, "/collections/demo/map?width=8&height=6&properties=t2m&palette="+p)
+		if rec.Code != 200 {
+			t.Errorf("palette %s : code = %d", p, rec.Code)
+			continue
+		}
+		if _, err := png.Decode(bytes.NewReader(rec.Body.Bytes())); err != nil {
+			t.Errorf("palette %s : png invalide (%v)", p, err)
+		}
+	}
+}
+
 // TestConformanceMaps : la classe Maps core est annoncée.
 func TestConformanceMaps(t *testing.T) {
 	found := false

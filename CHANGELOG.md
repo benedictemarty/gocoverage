@@ -5,6 +5,22 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.34.0] - 2026-08-09
+
+### Ajouté — palettes et interpolation bilinéaire (Maps/Tiles)
+
+- **Palettes** supplémentaires pour `/map` et les tuiles : `plasma`, `magma`,
+  `inferno`, `turbo`, `coolwarm` (en plus de `viridis` et `grayscale`), via le
+  paramètre `style`/`palette`. Interpolation linéaire entre points de contrôle
+  (`paletteStops`, `stopPalette`).
+- **`interpolation=bilinear`** : rendu lissé (moyenne pondérée des 4 mailles
+  encadrantes) au lieu du plus proche voisin, aussi bien pour `/map` que pour les
+  tuiles. NaN ignorés dans la pondération (`bilerp`) ; pixels hors grille
+  transparents. `bracketAxis` encadre une position sur un axe croissant ou
+  décroissant ; `fillBilinear` pré-calcule les encadrements par colonne/ligne.
+- Tests : rendu bilinéaire dimensionné, encadrement d'axe (croissant/décroissant,
+  hors bornes), rendu valide pour chaque palette nommée.
+
 ## [0.33.0] - 2026-08-09
 
 ### Ajouté — opérateurs CQL2 avancés

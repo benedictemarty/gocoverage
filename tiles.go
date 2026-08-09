@@ -135,6 +135,9 @@ func (c *Collection) RenderTile(o MapOptions, tms string, z, x, y int) (*image.N
 	if err != nil {
 		return nil, err
 	}
+	if o.Bilinear {
+		return sf.fillBilinear(tileSize, tileSize, g.lonAt, g.latAt), nil
+	}
 	colIx := make([]int, tileSize)
 	for px := 0; px < tileSize; px++ {
 		colIx[px] = nearestInRange(sf.xs, g.lonAt(px))
@@ -261,7 +264,7 @@ func (s *Server) renderTile(w http.ResponseWriter, r *http.Request, c *Collectio
 		writeErr(w, 400, err.Error())
 		return
 	}
-	o := MapOptions{Palette: mapPalette(q), Datetime: dt, Z: zlev}
+	o := MapOptions{Palette: mapPalette(q), Datetime: dt, Z: zlev, Bilinear: isBilinear(q.Get("interpolation"))}
 	if props := parseList(q.Get("properties")); len(props) > 0 {
 		o.Field = props[0]
 	}

@@ -36,8 +36,9 @@ GeneralGrid), `/coverage/rangetype` (SWE DataRecord), `/conformance`, `/api`
 **OGC API - Maps** (successeur de WMS) : `/map` rend une variable en **image**
 (`png`/`jpeg`) pour une emprise et une taille données — `bbox`, `width`/`height`,
 `datetime`, `z`, `properties=<variable>`, `colorscalerange=min,max`,
-`style`/`palette` (`viridis` par défaut, ou `grayscale`). Échantillonnage plus
-proche voisin, NaN/hors-emprise transparents.
+`style`/`palette` (`viridis` par défaut ; `plasma`, `magma`, `inferno`, `turbo`,
+`coolwarm`, `grayscale`), `interpolation=bilinear` (défaut : plus proche voisin).
+NaN/hors-emprise transparents.
 
 **OGC API - Tiles** : tuiles carte 256×256 via
 `/collections/{id}/map/tiles/{tms}/{z}/{y}/{x}` (mêmes options de rendu). Deux

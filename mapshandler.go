@@ -62,6 +62,7 @@ func (s *Server) mapRender(w http.ResponseWriter, r *http.Request, c *Collection
 		Palette:  mapPalette(q),
 		Datetime: dt,
 		Z:        z,
+		Bilinear: isBilinear(q.Get("interpolation")),
 	}
 	if props := parseList(q.Get("properties")); len(props) > 0 {
 		opts.Field = props[0]

@@ -223,8 +223,11 @@ func (c *Collection) Items(p ItemsParams) (features []map[string]interface{}, nu
 			if !ok {
 				continue
 			}
-			if p.Filter != nil && !p.Filter.eval(f["properties"].(map[string]interface{})) {
-				continue // exclu par le filtre CQL2
+			if p.Filter != nil {
+				fp := f["properties"].(map[string]interface{})
+				if !p.Filter.eval(cqlFeat{props: fp, lon: src.xs[lx], lat: src.ys[ly]}) {
+					continue // exclu par le filtre CQL2
+				}
 			}
 			numberMatched++
 			if seen >= p.Offset && len(features) < p.Limit {

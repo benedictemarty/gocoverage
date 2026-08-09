@@ -12,19 +12,25 @@ import (
 // combinées par `AND`/`OR` (insensible à la casse) et regroupées par parenthèses.
 // Exemples : `t2m > 20`, `t2m >= 10 AND uwind < 5`, `(a = 1 OR b = 2) AND c > 0`.
 
-// cqlExpr est un nœud de l'arbre de filtre : il évalue une entité (ses propriétés)
-// à vrai/faux.
+// cqlFeat est l'entité évaluée par un filtre : ses propriétés et la position de
+// son point (pour les prédicats spatiaux).
+type cqlFeat struct {
+	props    map[string]interface{}
+	lon, lat float64
+}
+
+// cqlExpr est un nœud de l'arbre de filtre : il évalue une entité à vrai/faux.
 type cqlExpr interface {
-	eval(props map[string]interface{}) bool
+	eval(f cqlFeat) bool
 }
 
 type cqlAnd struct{ l, r cqlExpr }
 
-func (e cqlAnd) eval(p map[string]interface{}) bool { return e.l.eval(p) && e.r.eval(p) }
+func (e cqlAnd) eval(f cqlFeat) bool { return e.l.eval(f) && e.r.eval(f) }
 
 type cqlOr struct{ l, r cqlExpr }
 
-func (e cqlOr) eval(p map[string]interface{}) bool { return e.l.eval(p) || e.r.eval(p) }
+func (e cqlOr) eval(f cqlFeat) bool { return e.l.eval(f) || e.r.eval(f) }
 
 // cqlCmp compare la propriété prop à une valeur (numérique ou chaîne).
 type cqlCmp struct {
@@ -35,17 +41,17 @@ type cqlCmp struct {
 	isNum bool
 }
 
-func (e cqlCmp) eval(p map[string]interface{}) bool {
-	v, ok := p[e.prop]
+func (e cqlCmp) eval(f cqlFeat) bool {
+	v, ok := f.props[e.prop]
 	if !ok || v == nil {
 		return false // propriété absente ou nulle (NaN) → non satisfaite
 	}
 	if e.isNum {
-		f, ok := v.(float64)
+		x, ok := v.(float64)
 		if !ok {
 			return false
 		}
-		return cmpNum(f, e.op, e.num)
+		return cmpNum(x, e.op, e.num)
 	}
 	s, ok := v.(string)
 	if !ok {
@@ -63,8 +69,8 @@ type cqlIn struct {
 	negate bool
 }
 
-func (e cqlIn) eval(p map[string]interface{}) bool {
-	v, ok := p[e.prop]
+func (e cqlIn) eval(f cqlFeat) bool {
+	v, ok := f.props[e.prop]
 	if !ok || v == nil {
 		return false
 	}
@@ -96,8 +102,8 @@ type cqlLike struct {
 	negate  bool
 }
 
-func (e cqlLike) eval(p map[string]interface{}) bool {
-	v, ok := p[e.prop]
+func (e cqlLike) eval(f cqlFeat) bool {
+	v, ok := f.props[e.prop]
 	if !ok || v == nil {
 		return false
 	}
@@ -115,16 +121,16 @@ type cqlBetween struct {
 	negate bool
 }
 
-func (e cqlBetween) eval(p map[string]interface{}) bool {
-	v, ok := p[e.prop]
+func (e cqlBetween) eval(f cqlFeat) bool {
+	v, ok := f.props[e.prop]
 	if !ok || v == nil {
 		return false
 	}
-	f, ok := v.(float64)
+	x, ok := v.(float64)
 	if !ok {
 		return false
 	}
-	within := f >= e.lo && f <= e.hi
+	within := x >= e.lo && x <= e.hi
 	return within != e.negate
 }
 
@@ -134,8 +140,8 @@ type cqlNull struct {
 	negate bool
 }
 
-func (e cqlNull) eval(p map[string]interface{}) bool {
-	v, ok := p[e.prop]
+func (e cqlNull) eval(f cqlFeat) bool {
+	v, ok := f.props[e.prop]
 	isNull := !ok || v == nil
 	return isNull != e.negate
 }
@@ -167,6 +173,54 @@ func likeMatch(pattern, s string) bool {
 		}
 	}
 	return dp[m][n]
+}
+
+// cqlSpatial : prédicat spatial (S_INTERSECTS / S_WITHIN) entre le point de
+// l'entité et un polygone (avec trous). negate → S_DISJOINT.
+type cqlSpatial struct {
+	rings  [][][2]float64
+	negate bool
+}
+
+func (e cqlSpatial) eval(f cqlFeat) bool {
+	in := pointInRings(f.lon, f.lat, e.rings)
+	return in != e.negate
+}
+
+// isGeomKeyword reconnaît les mots-clés de géométrie WKT.
+func isGeomKeyword(w string) bool {
+	switch strings.ToUpper(w) {
+	case "POLYGON", "MULTIPOLYGON", "POINT", "LINESTRING", "MULTILINESTRING", "MULTIPOINT":
+		return true
+	}
+	return false
+}
+
+// balancedParen renvoie l'indice juste après la parenthèse fermante équilibrant
+// celle en position open dans s.
+func balancedParen(s string, open int) (int, error) {
+	depth := 0
+	for i := open; i < len(s); i++ {
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i + 1, nil
+			}
+		}
+	}
+	return 0, fmt.Errorf("CQL2 : parenthèse de géométrie non fermée")
+}
+
+// isSpatialFunc reconnaît un nom de prédicat spatial géré.
+func isSpatialFunc(w string) bool {
+	switch strings.ToUpper(w) {
+	case "S_INTERSECTS", "S_WITHIN", "S_CONTAINS", "S_DISJOINT":
+		return true
+	}
+	return false
 }
 
 func cmpNum(a float64, op string, b float64) bool {
@@ -267,7 +321,25 @@ func cqlTokenize(s string) ([]string, error) {
 			if j == i {
 				return nil, fmt.Errorf("CQL2 : caractère inattendu %q", string(c))
 			}
-			toks = append(toks, s[i:j])
+			word := s[i:j]
+			// Géométrie WKT (POLYGON/POINT/…) : capturer le mot-clé et sa
+			// parenthèse équilibrée en un seul jeton (sinon le WKT serait éclaté).
+			if isGeomKeyword(word) {
+				k := j
+				for k < n && (s[k] == ' ' || s[k] == '\t') {
+					k++
+				}
+				if k < n && s[k] == '(' {
+					end, err := balancedParen(s, k)
+					if err != nil {
+						return nil, err
+					}
+					toks = append(toks, s[i:end])
+					i = end
+					continue
+				}
+			}
+			toks = append(toks, word)
 			i = j
 		}
 	}
@@ -341,6 +413,11 @@ func (p *cqlParser) parseComparison() (cqlExpr, error) {
 	if p.pos >= len(p.toks) {
 		return nil, fmt.Errorf("CQL2 : comparaison incomplète")
 	}
+	// Prédicat spatial : S_INTERSECTS(geom, <WKT>) etc.
+	if isSpatialFunc(p.toks[p.pos]) && p.pos+1 < len(p.toks) && p.toks[p.pos+1] == "(" {
+		return p.parseSpatial()
+	}
+
 	prop := p.toks[p.pos]
 	if isCQLReserved(prop) {
 		return nil, fmt.Errorf("CQL2 : nom de propriété attendu près de %q", prop)
@@ -474,6 +551,42 @@ func (p *cqlParser) parseIsNull(prop string) (cqlExpr, error) {
 	}
 	p.pos++
 	return cqlNull{prop: prop, negate: negate}, nil
+}
+
+// parseSpatial analyse `S_INTERSECTS|S_WITHIN|S_CONTAINS|S_DISJOINT(geom, <WKT>)`.
+// L'entité étant un point, S_INTERSECTS/S_WITHIN/S_CONTAINS se ramènent au test
+// point-dans-polygone ; S_DISJOINT en est la négation.
+func (p *cqlParser) parseSpatial() (cqlExpr, error) {
+	fn := strings.ToUpper(p.toks[p.pos])
+	p.pos++ // nom de fonction
+	if p.peek() != "(" {
+		return nil, fmt.Errorf("CQL2 : '(' attendu après %s", fn)
+	}
+	p.pos++
+	// Premier argument : référence à la géométrie de l'entité.
+	if !strings.EqualFold(p.peek(), "geom") && !strings.EqualFold(p.peek(), "geometry") {
+		return nil, fmt.Errorf("CQL2 : premier argument 'geom' attendu dans %s", fn)
+	}
+	p.pos++
+	if p.peek() != "," {
+		return nil, fmt.Errorf("CQL2 : ',' attendu dans %s", fn)
+	}
+	p.pos++
+	// Second argument : littéral WKT (capturé en un seul jeton).
+	wkt := p.peek()
+	if !isGeomKeyword(strings.TrimSpace(strings.SplitN(wkt, "(", 2)[0])) {
+		return nil, fmt.Errorf("CQL2 : géométrie WKT attendue dans %s", fn)
+	}
+	rings, err := parsePolygonRings(wkt)
+	if err != nil {
+		return nil, fmt.Errorf("CQL2 : géométrie invalide dans %s: %w", fn, err)
+	}
+	p.pos++
+	if p.peek() != ")" {
+		return nil, fmt.Errorf("CQL2 : ')' attendu pour clore %s", fn)
+	}
+	p.pos++
+	return cqlSpatial{rings: rings, negate: fn == "S_DISJOINT"}, nil
 }
 
 // isCQLReserved indique si un jeton est un mot réservé (ne peut pas être un nom

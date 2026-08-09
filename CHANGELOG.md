@@ -5,6 +5,25 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.35.0] - 2026-08-09
+
+### Ajouté — filtrage spatial CQL2 (S_INTERSECTS, S_WITHIN…)
+
+- Prédicats spatiaux CQL2 sur `/items` : **`S_INTERSECTS`**, **`S_WITHIN`**,
+  **`S_CONTAINS`** et **`S_DISJOINT`** (négation), entre le **point** de l'entité
+  et un **polygone WKT** (avec trous). Ex.
+  `filter=S_INTERSECTS(geom, POLYGON((0 0, 1 0, 1 1, 0 1, 0 0)))`. Réutilise
+  `pointInRings` et `parsePolygonRings`. Combinable avec les autres prédicats via
+  `AND`/`OR`.
+- **Tokenizer** : capture d'une géométrie WKT (`POLYGON`, `MULTIPOLYGON`, `POINT`,
+  `LINESTRING`…) en un seul jeton via parenthèses équilibrées (`balancedParen`),
+  sinon le WKT serait éclaté.
+- L'évaluateur de filtre transporte désormais la géométrie du point
+  (`cqlFeat{props, lon, lat}`).
+- **Conformance** : classes `cql2/…/spatial-operators` et `basic-spatial-operators`.
+- Tests : point-dans-polygone (intérieur/extérieur), `S_DISJOINT`, formes
+  spatiales mal formées, filtrage HTTP par polygone.
+
 ## [0.34.0] - 2026-08-09
 
 ### Ajouté — palettes et interpolation bilinéaire (Maps/Tiles)

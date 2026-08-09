@@ -2,6 +2,7 @@ package gocoverage
 
 import (
 	"encoding/json"
+	"net/url"
 	"testing"
 )
 
@@ -31,7 +32,7 @@ func TestCQLParseEval(t *testing.T) {
 			t.Errorf("%q : erreur %v", tc.expr, err)
 			continue
 		}
-		if got := e.eval(props); got != tc.want {
+		if got := e.eval(cqlFeat{props: props}); got != tc.want {
 			t.Errorf("%q : eval = %v, attendu %v", tc.expr, got, tc.want)
 		}
 	}
@@ -67,7 +68,7 @@ func TestCQLAdvanced(t *testing.T) {
 			t.Errorf("%q : erreur %v", tc.expr, err)
 			continue
 		}
-		if got := e.eval(props); got != tc.want {
+		if got := e.eval(cqlFeat{props: props}); got != tc.want {
 			t.Errorf("%q : eval = %v, attendu %v", tc.expr, got, tc.want)
 		}
 	}
@@ -102,6 +103,68 @@ func TestItemsFilterAdvanced(t *testing.T) {
 		v, _ := f.Properties["t2m"].(float64)
 		if v != 0 && v != 23 {
 			t.Errorf("t2m=%v hors de la liste (0, 23)", v)
+		}
+	}
+}
+
+// TestCQLSpatial : prédicats spatiaux point-dans-polygone.
+func TestCQLSpatial(t *testing.T) {
+	// Carré unité [0,1]×[0,1].
+	poly := "S_INTERSECTS(geom, POLYGON((0 0, 1 0, 1 1, 0 1, 0 0)))"
+	e, err := ParseCQL2Text(poly)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !e.eval(cqlFeat{lon: 0.5, lat: 0.5}) {
+		t.Error("point (0.5,0.5) devrait être dans le carré")
+	}
+	if e.eval(cqlFeat{lon: 2, lat: 2}) {
+		t.Error("point (2,2) ne devrait pas être dans le carré")
+	}
+	// S_DISJOINT = négation.
+	ed, _ := ParseCQL2Text("S_DISJOINT(geom, POLYGON((0 0, 1 0, 1 1, 0 1, 0 0)))")
+	if ed.eval(cqlFeat{lon: 0.5, lat: 0.5}) {
+		t.Error("S_DISJOINT devrait être faux pour un point intérieur")
+	}
+	if !ed.eval(cqlFeat{lon: 2, lat: 2}) {
+		t.Error("S_DISJOINT devrait être vrai pour un point extérieur")
+	}
+}
+
+// TestCQLSpatialErrors : formes spatiales mal formées → erreur.
+func TestCQLSpatialErrors(t *testing.T) {
+	for _, expr := range []string{
+		"S_INTERSECTS(geom)",
+		"S_INTERSECTS(t2m, POLYGON((0 0,1 0,1 1,0 0)))",
+		"S_INTERSECTS(geom, 5)",
+		"S_INTERSECTS geom, POLYGON((0 0)))",
+	} {
+		if _, err := ParseCQL2Text(expr); err == nil {
+			t.Errorf("%q : attendu une erreur", expr)
+		}
+	}
+}
+
+// TestItemsFilterSpatial : filtre spatial via HTTP restreint aux mailles dans le
+// polygone.
+func TestItemsFilterSpatial(t *testing.T) {
+	srv := NewServer(demoProvider(t))
+	// Démo : lon 0..3, lat 43..45. Polygone couvrant lon[−0.5,1.5], lat[43.5,45.5]
+	// → colonnes 0,1 × lignes lat 45,44 = 4 mailles.
+	wkt := "S_INTERSECTS(geom, POLYGON((-0.5 43.5, 1.5 43.5, 1.5 45.5, -0.5 45.5, -0.5 43.5)))"
+	rec := doGET(t, srv, "/collections/demo/items?limit=100&filter="+url.QueryEscape(wkt))
+	if rec.Code != 200 {
+		t.Fatalf("code = %d (%s)", rec.Code, rec.Body.String())
+	}
+	var fc featureCollection
+	json.Unmarshal(rec.Body.Bytes(), &fc)
+	if fc.NumberReturned != 4 {
+		t.Fatalf("returned = %d, attendu 4", fc.NumberReturned)
+	}
+	for _, f := range fc.Features {
+		lon, lat := f.Geometry.Coordinates[0], f.Geometry.Coordinates[1]
+		if lon < -0.5 || lon > 1.5 || lat < 43.5 || lat > 45.5 {
+			t.Errorf("entité hors polygone: %v", f.Geometry.Coordinates)
 		}
 	}
 }

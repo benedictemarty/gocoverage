@@ -52,7 +52,8 @@ la grille en **Features Point GeoJSON** — `bbox`, `limit`, `offset`, `datetime
 `next`/`prev`. `/items/{featureId}` renvoie une maille (id = `iy·nx + ix`).
 Lecture élaguée par chunks (Window) pour les collections lazy. **Filtrage CQL2**
 (Part 3) : `filter=t2m > 20 AND uwind < 5` (`filter-lang=cql2-text`), avec
-opérateurs avancés `IN`, `LIKE`, `BETWEEN`, `IS [NOT] NULL` ; schéma des
+opérateurs avancés `IN`, `LIKE`, `BETWEEN`, `IS [NOT] NULL` et **spatiaux**
+`S_INTERSECTS`/`S_WITHIN`/`S_DISJOINT` (point dans polygone WKT) ; schéma des
 propriétés via `/collections/{id}/queryables`.
 
 **Entrées** : `LoadNetCDF`, `LoadZarr`, `LoadChunkedZarr` (lecture élaguée par

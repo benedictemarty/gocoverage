@@ -65,6 +65,8 @@ func conformanceClasses() []string {
 		"http://www.opengis.net/spec/cql2/1.0/conf/cql2-text",
 		"http://www.opengis.net/spec/cql2/1.0/conf/basic-cql2",
 		"http://www.opengis.net/spec/cql2/1.0/conf/advanced-comparison-operators",
+		"http://www.opengis.net/spec/cql2/1.0/conf/spatial-operators",
+		"http://www.opengis.net/spec/cql2/1.0/conf/basic-spatial-operators",
 	}
 }
 

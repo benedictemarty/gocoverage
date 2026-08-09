@@ -33,6 +33,12 @@ GeneralGrid), `/coverage/rangetype` (SWE DataRecord), `/conformance`, `/api`
 `radius`, `trajectory`, `locations`, `instances` — avec `parameter-name`,
 `datetime`, `z`, `interpolation=bilinear`, distances métriques (`km`/`m`).
 
+**OGC API - Maps** (successeur de WMS) : `/map` rend une variable en **image**
+(`png`/`jpeg`) pour une emprise et une taille données — `bbox`, `width`/`height`,
+`datetime`, `z`, `properties=<variable>`, `colorscalerange=min,max`,
+`style`/`palette` (`viridis` par défaut, ou `grayscale`). Échantillonnage plus
+proche voisin, NaN/hors-emprise transparents.
+
 **Entrées** : `LoadNetCDF`, `LoadZarr`, `LoadChunkedZarr` (lecture élaguée par
 chunks), `LoadPyramidZarr` (aperçus multi-résolution), `LoadGrib` (GRIB2) +
 `ConvertGribToZarr` / `cmd/grib2zarr`.
@@ -71,6 +77,7 @@ go install github.com/benedictemarty/gocoverage/cmd/gocoverage@latest
 | `GET /collections/{id}/coverage` | requête → **CoverageJSON** (+ scaling) |
 | `GET /collections/{id}/coverage/domainset` | domaine CIS GeneralGrid |
 | `GET /collections/{id}/coverage/rangetype` | champs SWE DataRecord |
+| `GET /collections/{id}/map?bbox=…&width=…&height=…` | rendu **image** (OGC API - Maps, `f=png`/`jpeg`) |
 | `GET /collections/{id}/position?coords=x,y` | point le plus proche (EDR, PointSeries) |
 | `GET /collections/{id}/cube?bbox=…` | sous-cube (EDR) |
 | `GET /collections/{id}/area?coords=POLYGON((…))` | découpe par polygone (à trous) |

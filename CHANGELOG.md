@@ -5,6 +5,31 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.28.0] - 2026-08-09
+
+### Ajouté — OGC API - Maps (équivalent WMS)
+
+- **`/collections/{id}/map`** : rendu **image** d'une variable de couverture
+  (successeur moderne de WMS). Paramètres : `bbox` (défaut : emprise native),
+  `width`/`height` (défaut `512` × rapport d'emprise ; l'un fourni → l'autre
+  dérivé), `datetime`, `z`, `properties=<variable>`, `colorscalerange=min,max`
+  (défaut : min/max des données), `style`/`palette` (`viridis` par défaut, ou
+  `grayscale`), `f=png` (défaut) | `jpeg`.
+- **Moteur de rendu (`RenderMap`, `MapOptions`)** : réutilise `Query` pour
+  l'élagage (bbox/datetime/champ), échantillonne au **plus proche voisin** sur la
+  grille de sortie (pas de reprojection, cohérent avec `Collection.CRS`), applique
+  une palette entre deux bornes. **NaN et pixels hors grille → transparents** ;
+  une `bbox` hors couverture rend une image entièrement transparente (comportement
+  WMS), pas une erreur. Garde-fou mémoire : `maxMapPixels` (8 M pixels).
+- **Palettes** : `viridis` (10 points de contrôle, interpolation linéaire) et
+  `grayscale`.
+- **Découvrabilité** : classes de conformité `ogcapi-maps-1` (core,
+  geodata-maps, spatial-subsetting, png, jpeg, oas30), lien `.../map`
+  (`rel=…/ogc/1.0/map`) dans la description de collection et chemin `/api`.
+- Tests : rendu PNG dimensionné, taille par défaut par rapport d'emprise, zone
+  sans donnée transparente, `colorscalerange`, rejet des paramètres invalides,
+  annonce de conformité.
+
 ## [0.27.0] - 2026-08-09
 
 ### Ajouté — prise en charge GRIB2 (LoadGrib + cmd/grib2zarr)

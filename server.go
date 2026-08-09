@@ -118,6 +118,8 @@ func (s *Server) dispatchAction(w http.ResponseWriter, r *http.Request, c *Colle
 		s.radius(w, r, c)
 	case "locations":
 		s.locations(w, r, c)
+	case "map":
+		s.mapRender(w, r, c)
 	case "instances":
 		s.instances(w, r, c)
 	default:

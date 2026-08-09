@@ -224,6 +224,8 @@ func (c *Collection) collectionDoc() map[string]interface{} {
 		{"rel": "coverage", "href": base + "coverage"},
 		{"rel": "http://www.opengis.net/def/rel/ogc/1.0/coverage-domainset", "href": base + "coverage/domainset"},
 		{"rel": "http://www.opengis.net/def/rel/ogc/1.0/coverage-rangetype", "href": base + "coverage/rangetype"},
+		// OGC API - Maps : rendu image par défaut de la collection.
+		{"rel": "http://www.opengis.net/def/rel/ogc/1.0/map", "href": base + "map", "type": "image/png"},
 	}
 	for _, t := range []string{"position", "cube", "trajectory", "area", "corridor", "radius", "locations", "instances"} {
 		links = append(links, map[string]string{"rel": "data", "href": base + t})

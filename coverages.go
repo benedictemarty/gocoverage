@@ -39,6 +39,13 @@ func conformanceClasses() []string {
 		"http://www.opengis.net/spec/ogcapi-coverages-1/1.0/conf/zarr",
 		"http://www.opengis.net/spec/ogcapi-coverages-1/1.0/conf/oas30",
 		"http://www.opengis.net/spec/ogcapi-edr-1/1.1/conf/core",
+		// OGC API - Maps (successeur de WMS) : rendu image d'une couverture.
+		"http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/core",
+		"http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/geodata-maps",
+		"http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/spatial-subsetting",
+		"http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/png",
+		"http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/jpeg",
+		"http://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/oas30",
 	}
 }
 
@@ -63,6 +70,7 @@ func (s *Server) openapi(w http.ResponseWriter, r *http.Request) {
 			"/collections":                         path("Liste des collections"),
 			"/collections/{collectionId}":          path("Description d'une collection (extent, data_queries)"),
 			"/collections/{collectionId}/coverage": path("Récupération de la couverture (bbox, subset, datetime, scale-*, f)"),
+			"/collections/{collectionId}/map":      path("Rendu image de la couverture (bbox, width, height, datetime, z, properties, colorscalerange, style, f=png|jpeg)"),
 			"/collections/{collectionId}/position": path("Requête EDR position"),
 			"/collections/{collectionId}/area":     path("Requête EDR area (polygone, trous)"),
 			"/collections/{collectionId}/cube":     path("Requête EDR cube"),

@@ -122,6 +122,8 @@ func (s *Server) dispatchAction(w http.ResponseWriter, r *http.Request, c *Colle
 		s.locations(w, r, c)
 	case "items":
 		s.items(w, r, c)
+	case "queryables":
+		s.queryables(w, r, c)
 	case "map":
 		s.mapRender(w, r, c)
 	case "instances":

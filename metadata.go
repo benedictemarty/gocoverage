@@ -230,6 +230,7 @@ func (c *Collection) collectionDoc() map[string]interface{} {
 		{"rel": "http://www.opengis.net/def/rel/ogc/1.0/tilesets-map", "href": base + "map/tiles", "type": "application/json"},
 		// OGC API - Features : mailles de la grille en Features Point.
 		{"rel": "items", "href": base + "items", "type": "application/geo+json"},
+		{"rel": "http://www.opengis.net/def/rel/ogc/1.0/queryables", "href": base + "queryables", "type": "application/schema+json"},
 	}
 	for _, t := range []string{"position", "cube", "trajectory", "area", "corridor", "radius", "locations", "instances"} {
 		links = append(links, map[string]string{"rel": "data", "href": base + t})

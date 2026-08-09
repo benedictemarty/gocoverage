@@ -59,6 +59,11 @@ func conformanceClasses() []string {
 		"http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/core",
 		"http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/oas30",
 		"http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson",
+		// OGC API - Features Part 3 : filtrage CQL2.
+		"http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter",
+		"http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/features-filter",
+		"http://www.opengis.net/spec/cql2/1.0/conf/cql2-text",
+		"http://www.opengis.net/spec/cql2/1.0/conf/basic-cql2",
 	}
 }
 
@@ -88,6 +93,7 @@ func (s *Server) openapi(w http.ResponseWriter, r *http.Request) {
 			"/tileMatrixSets":                               path("TileMatrixSets gérés (WorldCRS84Quad, WebMercatorQuad)"),
 			"/collections/{collectionId}/items":             path("Entités (mailles) GeoJSON (OGC API - Features : bbox, limit, offset, datetime, properties)"),
 			"/collections/{collectionId}/items/{featureId}": path("Une entité (maille) par identifiant"),
+			"/collections/{collectionId}/queryables":        path("Schéma JSON des propriétés filtrables (CQL2)"),
 			"/collections/{collectionId}/position":          path("Requête EDR position"),
 			"/collections/{collectionId}/area":              path("Requête EDR area (polygone, trous)"),
 			"/collections/{collectionId}/cube":              path("Requête EDR cube"),

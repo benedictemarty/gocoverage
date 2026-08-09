@@ -49,6 +49,9 @@ Découverte via `/tileMatrixSets` et `/collections/{id}/map/tiles`.
 la grille en **Features Point GeoJSON** — `bbox`, `limit`, `offset`, `datetime`,
 `z`, `properties`, avec `numberMatched`/`numberReturned` et pagination
 `next`/`prev`. `/items/{featureId}` renvoie une maille (id = `iy·nx + ix`).
+Lecture élaguée par chunks (Window) pour les collections lazy. **Filtrage CQL2**
+(Part 3) : `filter=t2m > 20 AND uwind < 5` (`filter-lang=cql2-text`), schéma des
+propriétés via `/collections/{id}/queryables`.
 
 **Entrées** : `LoadNetCDF`, `LoadZarr`, `LoadChunkedZarr` (lecture élaguée par
 chunks), `LoadPyramidZarr` (aperçus multi-résolution), `LoadGrib` (GRIB2) +

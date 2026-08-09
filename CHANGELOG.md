@@ -5,6 +5,26 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.32.0] - 2026-08-09
+
+### Ajouté — filtrage CQL2 sur Features (OGC API - Features Part 3)
+
+- **`/items?filter=<expr>`** (`filter-lang=cql2-text`, défaut) : filtrage des
+  entités par valeur de propriété. Sous-ensemble CQL2-text géré : comparaisons
+  `=`, `<>`/`!=`, `<`, `<=`, `>`, `>=` sur littéraux numériques ou chaînes
+  (`'…'`), combinées par `AND`/`OR` (insensible à la casse) et regroupées par
+  parenthèses. Ex. `t2m > 20`, `t2m >= 10 AND uwind < 5`,
+  `(a = 1 OR b = 2) AND c > 0`. `ParseCQL2Text` (tokenizer + descente récursive).
+- **`/collections/{id}/queryables`** : schéma JSON des propriétés filtrables
+  (une par variable), avec lien `rel=…/queryables` dans la description de
+  collection. `filter`/`filter-lang` conservés dans les liens de pagination.
+- `filter-lang` non supporté (ex. `cql2-json`) ou expression mal formée → 400.
+- **Conformance** : classes `ogcapi-features-3` (filter, features-filter) et
+  `cql2` (cql2-text, basic-cql2).
+- Tests : analyse/évaluation CQL2 (comparaisons, AND/OR, parenthèses, chaînes),
+  expressions invalides, filtrage HTTP simple et combiné, `filter-lang` rejeté,
+  `/queryables`, annonce de conformité.
+
 ## [0.31.0] - 2026-08-09
 
 ### Modifié — Features en lecture élaguée (collections lazy)

@@ -36,6 +36,7 @@ type ItemsParams struct {
 	Z          *float64
 	Limit      int
 	Offset     int
+	Filter     cqlExpr // filtre CQL2 optionnel (nil = aucun)
 }
 
 // gridSource fournit l'accès aux valeurs d'une région lue (élaguée par chunks ou
@@ -222,6 +223,9 @@ func (c *Collection) Items(p ItemsParams) (features []map[string]interface{}, nu
 			if !ok {
 				continue
 			}
+			if p.Filter != nil && !p.Filter.eval(f["properties"].(map[string]interface{})) {
+				continue // exclu par le filtre CQL2
+			}
 			numberMatched++
 			if seen >= p.Offset && len(features) < p.Limit {
 				features = append(features, f)
@@ -297,6 +301,10 @@ func (s *Server) items(w http.ResponseWriter, r *http.Request, c *Collection) {
 		writeErr(w, 400, err.Error())
 		return
 	}
+	if p.Filter, err = parseFilter(q.Get("filter"), q.Get("filter-lang")); err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
 
 	features, matched, err := c.Items(p)
 	if err != nil {
@@ -354,7 +362,7 @@ func (s *Server) itemByID(w http.ResponseWriter, r *http.Request, c *Collection,
 func itemsLinks(id string, q url.Values, p ItemsParams, matched int) []map[string]string {
 	base := "/collections/" + id + "/items"
 	keep := url.Values{}
-	for _, k := range []string{"bbox", "datetime", "properties", "z", "limit"} {
+	for _, k := range []string{"bbox", "datetime", "properties", "z", "limit", "filter", "filter-lang"} {
 		if v := q.Get(k); v != "" {
 			keep.Set(k, v)
 		}
@@ -387,6 +395,49 @@ func itemsLinks(id string, q url.Values, p ItemsParams, matched int) []map[strin
 		links = append(links, map[string]string{"rel": "prev", "href": href(prev), "type": "application/geo+json"})
 	}
 	return links
+}
+
+// parseFilter analyse le paramètre filter selon filter-lang (défaut cql2-text).
+// Vide → nil (pas de filtre). filter-lang non supporté → erreur.
+func parseFilter(filter, lang string) (cqlExpr, error) {
+	filter = strings.TrimSpace(filter)
+	if filter == "" {
+		return nil, nil
+	}
+	switch strings.ToLower(strings.TrimSpace(lang)) {
+	case "", "cql2-text":
+		return ParseCQL2Text(filter)
+	default:
+		return nil, fmt.Errorf("filter-lang non supporté %q (cql2-text attendu)", lang)
+	}
+}
+
+// queryables : GET /collections/{id}/queryables — schéma JSON des propriétés
+// filtrables (OGC API - Features Part 3), une par variable de la collection.
+func (s *Server) queryables(w http.ResponseWriter, r *http.Request, c *Collection) {
+	props := map[string]interface{}{}
+	for _, f := range c.Fields() {
+		jsonType := "number"
+		switch f.Type {
+		case "integer":
+			jsonType = "integer"
+		case "string":
+			jsonType = "string"
+		}
+		entry := map[string]interface{}{"type": jsonType, "title": labelOr(f.Title, f.Name)}
+		if f.Unit != "" {
+			entry["x-ogc-unit"] = f.Unit
+		}
+		props[f.Name] = entry
+	}
+	writeJSON(w, 200, map[string]interface{}{
+		"$schema":              "https://json-schema.org/draft/2019-09/schema",
+		"$id":                  "/collections/" + c.ID + "/queryables",
+		"type":                 "object",
+		"title":                labelOr(c.Title, c.ID),
+		"properties":           props,
+		"additionalProperties": false,
+	})
 }
 
 // parseLimit lit le paramètre limit (défaut defaultItemsLimit, borné à maxItemsLimit).

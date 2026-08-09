@@ -5,6 +5,21 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.33.0] - 2026-08-09
+
+### Ajouté — opérateurs CQL2 avancés
+
+- Le parseur CQL2-text gère désormais les opérateurs de comparaison avancés :
+  **`IN (…)`/`NOT IN`**, **`LIKE`/`NOT LIKE`** (motifs `%` et `_`),
+  **`BETWEEN … AND …`/`NOT BETWEEN`**, **`IS [NOT] NULL`**. Ex.
+  `t2m IN (0, 23)`, `name LIKE 'par%'`, `t2m BETWEEN 10 AND 30`, `miss IS NULL`.
+- Tokenizer : prise en charge de la virgule (listes `IN`). Mots-clés réservés
+  (`AND`, `OR`, `NOT`, `IN`, `LIKE`, `BETWEEN`, `IS`, `NULL`) rejetés comme noms
+  de propriété.
+- **Conformance** : classe `cql2/…/advanced-comparison-operators`.
+- Tests : évaluation des quatre familles d'opérateurs (numérique et chaîne),
+  formes mal formées rejetées, filtrage HTTP `IN`.
+
 ## [0.32.0] - 2026-08-09
 
 ### Ajouté — filtrage CQL2 sur Features (OGC API - Features Part 3)

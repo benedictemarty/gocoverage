@@ -37,6 +37,75 @@ func TestCQLParseEval(t *testing.T) {
 	}
 }
 
+// TestCQLAdvanced : opérateurs IN, LIKE, BETWEEN, IS NULL.
+func TestCQLAdvanced(t *testing.T) {
+	props := map[string]interface{}{"t2m": 20.0, "name": "paris", "miss": nil}
+	cases := []struct {
+		expr string
+		want bool
+	}{
+		{"t2m IN (10, 20, 30)", true},
+		{"t2m IN (10, 30)", false},
+		{"t2m NOT IN (10, 30)", true},
+		{"name IN ('lyon', 'paris')", true},
+		{"name LIKE 'par%'", true},
+		{"name LIKE 'p_ris'", true},
+		{"name LIKE 'lyon%'", false},
+		{"name NOT LIKE 'lyon%'", true},
+		{"t2m BETWEEN 10 AND 30", true},
+		{"t2m BETWEEN 21 AND 30", false},
+		{"t2m NOT BETWEEN 21 AND 30", true},
+		{"miss IS NULL", true},
+		{"t2m IS NULL", false},
+		{"t2m IS NOT NULL", true},
+		{"absent IS NULL", true},
+		{"t2m BETWEEN 10 AND 30 AND name LIKE 'par%'", true},
+	}
+	for _, tc := range cases {
+		e, err := ParseCQL2Text(tc.expr)
+		if err != nil {
+			t.Errorf("%q : erreur %v", tc.expr, err)
+			continue
+		}
+		if got := e.eval(props); got != tc.want {
+			t.Errorf("%q : eval = %v, attendu %v", tc.expr, got, tc.want)
+		}
+	}
+}
+
+// TestCQLAdvancedErrors : formes avancées mal formées → erreur.
+func TestCQLAdvancedErrors(t *testing.T) {
+	for _, expr := range []string{
+		"t2m IN 10", "t2m IN (10,", "t2m LIKE 5", "t2m BETWEEN 1", "t2m BETWEEN 1 5",
+		"t2m IS", "t2m IS NOT", "NOT IS NULL",
+	} {
+		if _, err := ParseCQL2Text(expr); err == nil {
+			t.Errorf("%q : attendu une erreur", expr)
+		}
+	}
+}
+
+// TestItemsFilterAdvanced : IN via HTTP restreint aux valeurs listées.
+func TestItemsFilterAdvanced(t *testing.T) {
+	srv := NewServer(demoProvider(t))
+	// t2m IN (0, 23) → deux mailles (coins).
+	rec := doGET(t, srv, "/collections/demo/items?filter=t2m+IN+%280%2C+23%29&limit=100")
+	if rec.Code != 200 {
+		t.Fatalf("code = %d (%s)", rec.Code, rec.Body.String())
+	}
+	var fc featureCollection
+	json.Unmarshal(rec.Body.Bytes(), &fc)
+	if fc.NumberReturned != 2 {
+		t.Fatalf("returned = %d, attendu 2", fc.NumberReturned)
+	}
+	for _, f := range fc.Features {
+		v, _ := f.Properties["t2m"].(float64)
+		if v != 0 && v != 23 {
+			t.Errorf("t2m=%v hors de la liste (0, 23)", v)
+		}
+	}
+}
+
 // TestCQLParseErrors : expressions mal formées → erreur.
 func TestCQLParseErrors(t *testing.T) {
 	for _, expr := range []string{"t2m >", "t2m 20", "AND t2m = 1", "(t2m = 1", "t2m = 'x", "= 5"} {

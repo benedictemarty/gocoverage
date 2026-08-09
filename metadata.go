@@ -226,6 +226,8 @@ func (c *Collection) collectionDoc() map[string]interface{} {
 		{"rel": "http://www.opengis.net/def/rel/ogc/1.0/coverage-rangetype", "href": base + "coverage/rangetype"},
 		// OGC API - Maps : rendu image par défaut de la collection.
 		{"rel": "http://www.opengis.net/def/rel/ogc/1.0/map", "href": base + "map", "type": "image/png"},
+		// OGC API - Tiles : tuiles carte matricielles.
+		{"rel": "http://www.opengis.net/def/rel/ogc/1.0/tilesets-map", "href": base + "map/tiles", "type": "application/json"},
 	}
 	for _, t := range []string{"position", "cube", "trajectory", "area", "corridor", "radius", "locations", "instances"} {
 		links = append(links, map[string]string{"rel": "data", "href": base + t})

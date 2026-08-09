@@ -29,6 +29,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api", s.openapi)
 	mux.HandleFunc("/collections", s.collections)
 	mux.HandleFunc("/collections/", s.collectionRoutes)
+	mux.HandleFunc("/tileMatrixSets", s.tileMatrixSets)
+	mux.HandleFunc("/tileMatrixSets/", s.tileMatrixSetByID)
 	return mux
 }
 
@@ -123,6 +125,15 @@ func (s *Server) dispatchAction(w http.ResponseWriter, r *http.Request, c *Colle
 	case "instances":
 		s.instances(w, r, c)
 	default:
+		// OGC API - Tiles : /map/tiles[/{tms}/{z}/{y}/{x}].
+		if action == "map/tiles" {
+			s.mapTiles(w, r, c, "")
+			return
+		}
+		if rest, ok := strings.CutPrefix(action, "map/tiles/"); ok {
+			s.mapTiles(w, r, c, rest)
+			return
+		}
 		if rest, ok := strings.CutPrefix(action, "locations/"); ok {
 			s.locationByID(w, r, c, rest)
 			return

@@ -39,6 +39,12 @@ GeneralGrid), `/coverage/rangetype` (SWE DataRecord), `/conformance`, `/api`
 `style`/`palette` (`viridis` par défaut, ou `grayscale`). Échantillonnage plus
 proche voisin, NaN/hors-emprise transparents.
 
+**OGC API - Tiles** : tuiles carte 256×256 via
+`/collections/{id}/map/tiles/{tms}/{z}/{y}/{x}` (mêmes options de rendu). Deux
+TileMatrixSets : `WorldCRS84Quad` (géographique) et `WebMercatorQuad` (Web
+Mercator, mapping latitude non linéaire — sans reprojection des données).
+Découverte via `/tileMatrixSets` et `/collections/{id}/map/tiles`.
+
 **Entrées** : `LoadNetCDF`, `LoadZarr`, `LoadChunkedZarr` (lecture élaguée par
 chunks), `LoadPyramidZarr` (aperçus multi-résolution), `LoadGrib` (GRIB2) +
 `ConvertGribToZarr` / `cmd/grib2zarr`.
@@ -78,6 +84,8 @@ go install github.com/benedictemarty/gocoverage/cmd/gocoverage@latest
 | `GET /collections/{id}/coverage/domainset` | domaine CIS GeneralGrid |
 | `GET /collections/{id}/coverage/rangetype` | champs SWE DataRecord |
 | `GET /collections/{id}/map?bbox=…&width=…&height=…` | rendu **image** (OGC API - Maps, `f=png`/`jpeg`) |
+| `GET /collections/{id}/map/tiles/{tms}/{z}/{y}/{x}` | tuile carte (OGC API - Tiles) |
+| `GET /tileMatrixSets` / `…/{id}` | TileMatrixSets gérés (WorldCRS84Quad, WebMercatorQuad) |
 | `GET /collections/{id}/position?coords=x,y` | point le plus proche (EDR, PointSeries) |
 | `GET /collections/{id}/cube?bbox=…` | sous-cube (EDR) |
 | `GET /collections/{id}/area?coords=POLYGON((…))` | découpe par polygone (à trous) |

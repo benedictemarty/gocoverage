@@ -56,7 +56,41 @@ func (c *Collection) RenderMap(o MapOptions) (*image.NRGBA, error) {
 		return image.NewNRGBA(image.Rect(0, 0, o.Width, o.Height)), nil
 	}
 
-	// Élagage : sélection du champ, de l'emprise et de la plage temporelle.
+	sf, err := c.sampledField(o)
+	if err != nil {
+		return nil, err
+	}
+
+	// Pré-calcul des indices source par colonne (lon) et par ligne (lat) : évite
+	// une recherche par pixel. -1 = hors emprise de la grille source. Emprise
+	// linéaire en lon/lat (CRS84).
+	minX, maxX := o.BBox[0], o.BBox[2]
+	minY, maxY := o.BBox[1], o.BBox[3]
+	colIx := make([]int, o.Width)
+	for px := 0; px < o.Width; px++ {
+		lon := minX + (float64(px)+0.5)/float64(o.Width)*(maxX-minX)
+		colIx[px] = nearestInRange(sf.xs, lon)
+	}
+	rowIy := make([]int, o.Height)
+	for py := 0; py < o.Height; py++ {
+		// L'axe image descend (py=0 en haut = latitude max).
+		lat := maxY - (float64(py)+0.5)/float64(o.Height)*(maxY-minY)
+		rowIy[py] = nearestInRange(sf.ys, lat)
+	}
+	return sf.fill(o.Width, o.Height, colIx, rowIy), nil
+}
+
+// sampledField prépare l'échantillonnage d'une variable : élagage (bbox/datetime/
+// z/champ via Query), accès valAt(ix,iy), coordonnées x/y et bornes de rampe +
+// palette. Partagé par le rendu carte (/map) et le rendu de tuiles.
+type sampledField struct {
+	xs, ys     []float64
+	valAt      func(ix, iy int) float64
+	vmin, vmax float64
+	pal        palette
+}
+
+func (c *Collection) sampledField(o MapOptions) (*sampledField, error) {
 	qp := QueryParams{BBox: &o.BBox, Datetime: o.Datetime}
 	if o.Field != "" {
 		qp.Properties = []string{o.Field}
@@ -129,45 +163,35 @@ func (c *Collection) RenderMap(o MapOptions) (*image.NRGBA, error) {
 	if math.IsInf(vmin, 0) || math.IsInf(vmax, 0) { // toutes valeurs manquantes
 		vmin, vmax = 0, 1
 	}
-	span := vmax - vmin
+	return &sampledField{xs: xs, ys: ys, valAt: valAt, vmin: vmin, vmax: vmax, pal: paletteByName(o.Palette)}, nil
+}
+
+// fill colorie une image width×height : colIx[px]/rowIy[py] donnent la maille
+// source (-1 = hors grille → transparent), NaN → transparent.
+func (sf *sampledField) fill(width, height int, colIx, rowIy []int) *image.NRGBA {
+	span := sf.vmax - sf.vmin
 	if span <= 0 {
 		span = 1 // évite la division par zéro (champ constant)
 	}
-	pal := paletteByName(o.Palette)
-
-	// Pré-calcul des indices source par colonne (lon) et par ligne (lat) : évite
-	// une recherche par pixel. -1 = hors emprise de la grille source.
-	minX, maxX := o.BBox[0], o.BBox[2]
-	minY, maxY := o.BBox[1], o.BBox[3]
-	colIx := make([]int, o.Width)
-	for px := 0; px < o.Width; px++ {
-		lon := minX + (float64(px)+0.5)/float64(o.Width)*(maxX-minX)
-		colIx[px] = nearestInRange(xs, lon)
-	}
-	rowIy := make([]int, o.Height)
-	for py := 0; py < o.Height; py++ {
-		// L'axe image descend (py=0 en haut = latitude max).
-		lat := maxY - (float64(py)+0.5)/float64(o.Height)*(maxY-minY)
-		rowIy[py] = nearestInRange(ys, lat)
-	}
-
-	img := image.NewNRGBA(image.Rect(0, 0, o.Width, o.Height))
-	for py := 0; py < o.Height; py++ {
+	img := image.NewNRGBA(image.Rect(0, 0, width, height))
+	for py := 0; py < height; py++ {
 		iy := rowIy[py]
-		for px := 0; px < o.Width; px++ {
+		if iy < 0 {
+			continue
+		}
+		for px := 0; px < width; px++ {
 			ix := colIx[px]
-			if ix < 0 || iy < 0 {
+			if ix < 0 {
 				continue // transparent (hors grille)
 			}
-			v := valAt(ix, iy)
+			v := sf.valAt(ix, iy)
 			if math.IsNaN(v) {
 				continue // transparent (donnée manquante)
 			}
-			t := (v - vmin) / span
-			img.SetNRGBA(px, py, pal(t))
+			img.SetNRGBA(px, py, sf.pal((v-sf.vmin)/span))
 		}
 	}
-	return img, nil
+	return img
 }
 
 // nearestInRange renvoie l'indice de la coordonnée la plus proche de target dans

@@ -5,6 +5,33 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.29.0] - 2026-08-09
+
+### Ajouté — OGC API - Tiles (tuiles carte)
+
+- **`/collections/{id}/map/tiles/{tms}/{z}/{y}/{x}`** : rendu **PNG/JPEG** d'une
+  tuile 256×256, réutilisant le moteur de rendu Maps. `{z}`=tileMatrix,
+  `{y}`=tileRow, `{x}`=tileCol. Paramètres : `properties`, `colorscalerange`,
+  `style`/`palette`, `datetime`, `elevation` (niveau vertical, `z` étant pris par
+  le chemin).
+- **Deux TileMatrixSets** : `WorldCRS84Quad` (grille géographique, aucune
+  reprojection) et `WebMercatorQuad` (projection Web Mercator — le mapping
+  pixel→latitude est **non linéaire** ; seule la géométrie d'échantillonnage
+  change, les données ne sont jamais reprojetées). `RenderTile`, `tileGeometry`.
+- **Découverte** : `/tileMatrixSets` (+ `/tileMatrixSets/{id}`),
+  `/collections/{id}/map/tiles` (liste des tilesets), lien
+  `rel=…/ogc/1.0/tilesets-map` dans la description de collection.
+- Tuile hors couverture → image entièrement transparente (200) ; tuile hors
+  grille ou indices non entiers → 400 ; TMS inconnu → 404. Garde-fou de zoom
+  (`maxTileZoom`).
+- **Refactor** : moteur de rendu factorisé (`sampledField` + `fill`) partagé
+  entre `/map` et les tuiles.
+- **Conformance** : classes `ogcapi-tiles-1` (core, tileset, tilesets-list, png,
+  jpeg, oas30), `ogcapi-maps-1/…/tilesets`, `ogcapi-tilematrixset-1`.
+- Tests : liste/définition des TMS, rendu d'une tuile CRS84 et Mercator recouvrant
+  la donnée, tuile hors couverture transparente, erreurs (TMS/grille/indices),
+  annonce de conformité.
+
 ## [0.28.0] - 2026-08-09
 
 ### Ajouté — OGC API - Maps (équivalent WMS)

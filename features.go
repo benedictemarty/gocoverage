@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/benedictemarty/xarray"
 )
 
 // OGC API - Features (successeur moderne de WFS). Expose chaque maille de la
@@ -36,52 +38,70 @@ type ItemsParams struct {
 	Offset     int
 }
 
-// cellReader prépare l'accès aux mailles de la grille pleine résolution : axes
-// x/y, variables retenues et lecture d'une valeur (ix, iy) avec les dimensions
-// temps/niveau fixées à l'indice choisi.
-type cellReader struct {
-	xs, ys []float64
-	names  []string
-	valAt  map[string]func(ix, iy int) float64
+// gridSource fournit l'accès aux valeurs d'une région lue (élaguée par chunks ou
+// grille complète) et le lien vers les indices absolus de la grille pleine
+// résolution (pour un identifiant d'entité stable).
+type gridSource struct {
+	xs, ys       []float64 // coordonnées de la région réellement lue
+	baseX, baseY int       // offset absolu de xs[0]/ys[0] dans les axes complets
+	nxFull       int       // largeur de la grille pleine résolution (pour l'id)
+	names        []string
+	valAt        map[string]func(lx, ly int) float64 // indices locaux à la région
 }
 
-// newCellReader construit le lecteur de mailles pour les variables demandées
-// (toutes si props est vide), en fixant le pas temporel (datetime) et le niveau
-// vertical (z).
-func (c *Collection) newCellReader(props []string, datetime *[2]float64, z *float64) (*cellReader, error) {
-	g := c.grid()
-	if g == nil {
+// readRegion lit la région couvrant bbox — lecture élaguée par chunks si un
+// Window est disponible (ne matérialise pas toute la grille), sinon grille
+// complète — avec les dimensions temps/niveau fixées au pas le plus proche de
+// datetime/z. props restreint les variables (vide = toutes).
+func (c *Collection) readRegion(bbox *[4]float64, datetime *[2]float64, z *float64, props []string) (*gridSource, error) {
+	fullXs, fullYs := c.coordOf(c.XDim), c.coordOf(c.YDim)
+	if len(fullXs) == 0 || len(fullYs) == 0 {
+		return nil, fmt.Errorf("coordonnées X/Y illisibles")
+	}
+
+	// Source : lecture élaguée si Window disponible, sinon grille complète.
+	var ds *xarray.Dataset[float64]
+	if c.Data == nil && c.Window != nil {
+		win, err := c.Window(WindowSel{BBox: bbox, TRange: datetime})
+		if err != nil {
+			return nil, fmt.Errorf("lecture élaguée: %w", err)
+		}
+		ds = win
+	} else {
+		ds = c.grid()
+	}
+	if ds == nil {
 		return nil, fmt.Errorf("données indisponibles")
 	}
-	xs, err := g.Coord(c.XDim)
+
+	xs, err := ds.Coord(c.XDim)
 	if err != nil || len(xs) == 0 {
 		return nil, fmt.Errorf("coordonnée X %q illisible", c.XDim)
 	}
-	ys, err := g.Coord(c.YDim)
+	ys, err := ds.Coord(c.YDim)
 	if err != nil || len(ys) == 0 {
 		return nil, fmt.Errorf("coordonnée Y %q illisible", c.YDim)
 	}
 
-	// Indices des pas temps/niveau (défaut : premier pas).
-	ti, err := c.stepIndex(c.TDim, datetimeToPoint(datetime))
-	if err != nil {
-		return nil, err
-	}
-	zi, err := c.stepIndex(c.ZDim, z)
-	if err != nil {
-		return nil, err
-	}
+	// Indices des pas temps/niveau, calculés sur les axes réellement lus.
+	ti := nearestStep(ds, c.TDim, datetimeToPoint(datetime))
+	zi := nearestStep(ds, c.ZDim, z)
 
 	want := map[string]bool{}
 	for _, p := range props {
 		want[p] = true
 	}
-	r := &cellReader{xs: xs, ys: ys, valAt: map[string]func(ix, iy int) float64{}}
-	for _, name := range g.VarNames() {
+	src := &gridSource{
+		xs: xs, ys: ys,
+		baseX: baseIndex(fullXs, xs[0]), baseY: baseIndex(fullYs, ys[0]),
+		nxFull: len(fullXs),
+		valAt:  map[string]func(lx, ly int) float64{},
+	}
+	for _, name := range ds.VarNames() {
 		if len(want) > 0 && !want[name] {
 			continue
 		}
-		da, err := g.Get(name)
+		da, err := ds.Get(name)
 		if err != nil {
 			return nil, err
 		}
@@ -102,30 +122,38 @@ func (c *Collection) newCellReader(props []string, datetime *[2]float64, z *floa
 			}
 		}
 		sx, sy := strides[xi], strides[yi]
-		r.names = append(r.names, name)
-		r.valAt[name] = func(ix, iy int) float64 { return data[base+ix*sx+iy*sy] }
+		src.names = append(src.names, name)
+		src.valAt[name] = func(lx, ly int) float64 { return data[base+lx*sx+ly*sy] }
 	}
-	if len(r.names) == 0 {
+	if len(src.names) == 0 {
 		return nil, fmt.Errorf("aucune variable à exposer")
 	}
-	return r, nil
+	return src, nil
 }
 
-// stepIndex renvoie l'indice du pas le plus proche de la valeur demandée sur la
-// dimension dim (temps/niveau). dim vide ou valeur nil → 0.
-func (c *Collection) stepIndex(dim string, target *float64) (int, error) {
+// nearestStep renvoie l'indice du pas le plus proche de target sur la dimension
+// dim de ds ; dim vide, target nil ou hors axe → 0 (premier pas).
+func nearestStep(ds *xarray.Dataset[float64], dim string, target *float64) int {
 	if dim == "" || target == nil {
-		return 0, nil
+		return 0
 	}
-	coord := c.coordOf(dim)
-	if len(coord) == 0 {
-		return 0, nil
+	coord, err := ds.Coord(dim)
+	if err != nil || len(coord) == 0 {
+		return 0
 	}
-	i := nearestInRange(coord, *target)
-	if i < 0 {
-		return 0, fmt.Errorf("valeur %g hors de l'axe %q", *target, dim)
+	if i := nearestInRange(coord, *target); i >= 0 {
+		return i
 	}
-	return i, nil
+	return 0
+}
+
+// baseIndex renvoie l'indice absolu de la valeur v dans l'axe complet (début de
+// la région lue). v provient d'un sous-ensemble contigu de full ; 0 par défaut.
+func baseIndex(full []float64, v float64) int {
+	if i := nearestInRange(full, v); i >= 0 {
+		return i
+	}
+	return 0
 }
 
 // datetimeToPoint réduit une plage temporelle à un point (borne basse) pour la
@@ -138,13 +166,14 @@ func datetimeToPoint(dt *[2]float64) *float64 {
 	return &v
 }
 
-// cellFeature construit le Feature Point de la maille (ix, iy) ; renvoie false si
-// la maille est entièrement vide (toutes valeurs NaN).
-func (r *cellReader) cellFeature(ix, iy, nx int) (map[string]interface{}, bool) {
+// feature construit le Feature Point de la maille locale (lx, ly) ; renvoie false
+// si la maille est entièrement vide (toutes valeurs NaN). L'identifiant est
+// l'indice plat absolu (grille pleine résolution).
+func (src *gridSource) feature(lx, ly int) (map[string]interface{}, bool) {
 	props := map[string]interface{}{}
 	any := false
-	for _, name := range r.names {
-		v := r.valAt[name](ix, iy)
+	for _, name := range src.names {
+		v := src.valAt[name](lx, ly)
 		if math.IsNaN(v) {
 			props[name] = nil
 			continue
@@ -155,10 +184,11 @@ func (r *cellReader) cellFeature(ix, iy, nx int) (map[string]interface{}, bool) 
 	if !any {
 		return nil, false
 	}
+	ix, iy := src.baseX+lx, src.baseY+ly
 	return map[string]interface{}{
 		"type":       "Feature",
-		"id":         iy*nx + ix,
-		"geometry":   map[string]interface{}{"type": "Point", "coordinates": []float64{r.xs[ix], r.ys[iy]}},
+		"id":         iy*src.nxFull + ix,
+		"geometry":   map[string]interface{}{"type": "Point", "coordinates": []float64{src.xs[lx], src.ys[ly]}},
 		"properties": props,
 	}, true
 }
@@ -172,22 +202,23 @@ func inBBox(bb *[4]float64, x, y float64) bool {
 }
 
 // Items énumère les mailles en Features Point (ordre iy, ix), applique le filtre
-// bbox et la pagination offset/limit. Renvoie les features de la page, le nombre
-// total d'entités filtrées (numberMatched) et l'ordre stable des identifiants.
+// bbox et la pagination offset/limit. Renvoie les features de la page et le
+// nombre total d'entités filtrées (numberMatched). Lecture élaguée par chunks
+// quand un Window est disponible : la région lue peut dépasser bbox (chunks
+// entiers), d'où le filtre inBBox conservé.
 func (c *Collection) Items(p ItemsParams) (features []map[string]interface{}, numberMatched int, err error) {
-	r, err := c.newCellReader(p.Properties, p.Datetime, p.Z)
+	src, err := c.readRegion(p.BBox, p.Datetime, p.Z, p.Properties)
 	if err != nil {
 		return nil, 0, err
 	}
-	nx, ny := len(r.xs), len(r.ys)
 	features = []map[string]interface{}{}
 	seen := 0 // entités non vides rencontrées (pour offset/limit)
-	for iy := 0; iy < ny; iy++ {
-		for ix := 0; ix < nx; ix++ {
-			if !inBBox(p.BBox, r.xs[ix], r.ys[iy]) {
+	for ly := 0; ly < len(src.ys); ly++ {
+		for lx := 0; lx < len(src.xs); lx++ {
+			if !inBBox(p.BBox, src.xs[lx], src.ys[ly]) {
 				continue
 			}
-			f, ok := r.cellFeature(ix, iy, nx)
+			f, ok := src.feature(lx, ly)
 			if !ok {
 				continue
 			}
@@ -202,18 +233,29 @@ func (c *Collection) Items(p ItemsParams) (features []map[string]interface{}, nu
 }
 
 // Item renvoie l'entité (Feature) d'identifiant fid = iy·nx + ix, ou une erreur
-// si l'identifiant est hors grille ou la maille vide.
+// si l'identifiant est hors grille ou la maille vide. La maille visée est lue de
+// façon élaguée (bbox ponctuelle → seul le chunk concerné est chargé).
 func (c *Collection) Item(fid int, p ItemsParams) (map[string]interface{}, error) {
-	r, err := c.newCellReader(p.Properties, p.Datetime, p.Z)
-	if err != nil {
-		return nil, err
+	fullXs, fullYs := c.coordOf(c.XDim), c.coordOf(c.YDim)
+	nx, ny := len(fullXs), len(fullYs)
+	if nx == 0 || ny == 0 {
+		return nil, fmt.Errorf("coordonnées indisponibles")
 	}
-	nx, ny := len(r.xs), len(r.ys)
 	if fid < 0 || fid >= nx*ny {
 		return nil, fmt.Errorf("identifiant hors grille: %d", fid)
 	}
 	ix, iy := fid%nx, fid/nx
-	f, ok := r.cellFeature(ix, iy, nx)
+	tiny := [4]float64{fullXs[ix], fullYs[iy], fullXs[ix], fullYs[iy]}
+	src, err := c.readRegion(&tiny, p.Datetime, p.Z, p.Properties)
+	if err != nil {
+		return nil, err
+	}
+	lx := nearestInRange(src.xs, fullXs[ix])
+	ly := nearestInRange(src.ys, fullYs[iy])
+	if lx < 0 || ly < 0 {
+		return nil, fmt.Errorf("maille introuvable: %d", fid)
+	}
+	f, ok := src.feature(lx, ly)
 	if !ok {
 		return nil, fmt.Errorf("maille vide: %d", fid)
 	}

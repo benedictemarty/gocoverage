@@ -5,6 +5,26 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.31.0] - 2026-08-09
+
+### Modifié — Features en lecture élaguée (collections lazy)
+
+- **`/items` et `/items/{fid}`** passent désormais par la **lecture élaguée par
+  chunks** (`Window`) quand elle est disponible, au lieu de matérialiser toute la
+  grille (`c.grid()`). Une requête `/items?bbox=…` ne lit que les chunks
+  recouvrant l'emprise ; `/items/{fid}` lit uniquement le chunk contenant la
+  maille (bbox ponctuelle). Les collections en mémoire restent inchangées.
+- **Identifiant d'entité stable** conservé (`fid = iy·nx + ix` en pleine
+  résolution) malgré l'élagage : les axes complets sont obtenus via l'indice léger
+  `coordHint` (sans charger les données) et l'offset absolu de la région lue est
+  recalculé (`baseIndex`).
+- Refactor interne : `gridSource` + `readRegion` (remplace `cellReader`),
+  `nearestStep` sur les axes réellement lus.
+- Note : Maps et Tiles bénéficiaient déjà de l'élagage (via `Query`).
+- Tests : `/items` et `Item` sur une collection chunkée ne lisent qu'un seul
+  chunk (assertion `ChunksRead`), grille complète non matérialisée, identifiants
+  absolus corrects.
+
 ## [0.30.0] - 2026-08-09
 
 ### Ajouté — OGC API - Features (équivalent WFS)

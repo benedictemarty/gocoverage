@@ -151,6 +151,65 @@ func TestItemsBadParams(t *testing.T) {
 	}
 }
 
+// TestItemsLazyPruned : sur une collection élaguée (Window), /items ne lit que
+// les chunks recouvrant la bbox et conserve l'identifiant absolu.
+func TestItemsLazyPruned(t *testing.T) {
+	dir := t.TempDir() + "/g"
+	writeChunkedZarr(t, dir) // grille 4×4, chunks 2×2, valeur = latidx*4 + lonidx
+	r, err := OpenZarrWindow(dir, "longitude", "latitude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &Collection{
+		ID: "c", XDim: "longitude", YDim: "latitude", Window: r.ReadWindow,
+		coordHint: map[string][]float64{"longitude": {0, 1, 2, 3}, "latitude": {4, 3, 2, 1}},
+	}
+
+	// bbox = coin haut-gauche → un seul chunk (2×2).
+	features, matched, err := c.Items(ItemsParams{BBox: &[4]float64{0, 3, 1, 4}, Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.ChunksRead() != 1 {
+		t.Errorf("ChunksRead = %d, attendu 1 (élagage)", r.ChunksRead())
+	}
+	if c.Data != nil {
+		t.Error("la grille complète ne doit pas être matérialisée")
+	}
+	if matched != 4 || len(features) != 4 {
+		t.Fatalf("matched=%d returned=%d, attendu 4/4", matched, len(features))
+	}
+	// Maille lon1/lat3 → id absolu = iy(1)·nx(4) + ix(1) = 5, valeur = 5.
+	var found bool
+	for _, f := range features {
+		if f["id"] == 5 {
+			found = true
+			if v, _ := f["properties"].(map[string]interface{})["t2m"].(float64); v != 5 {
+				t.Errorf("t2m(id=5) = %v, attendu 5", v)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("entité id=5 absente")
+	}
+
+	// Item(15) : maille lon3/lat1 → bbox ponctuelle → un seul chunk lu
+	// (ChunksRead reflète le dernier ReadWindow).
+	f2, err := c.Item(15, ItemsParams{})
+	if err != nil {
+		t.Fatalf("Item(15): %v", err)
+	}
+	if f2["id"] != 15 {
+		t.Errorf("Item(15).id = %v, attendu 15", f2["id"])
+	}
+	if v, _ := f2["properties"].(map[string]interface{})["t2m"].(float64); v != 15 {
+		t.Errorf("t2m(id=15) = %v, attendu 15", v)
+	}
+	if r.ChunksRead() != 1 {
+		t.Errorf("chunks lus par Item = %d, attendu 1 (élagage ponctuel)", r.ChunksRead())
+	}
+}
+
 // TestConformanceFeatures : la classe Features core est annoncée.
 func TestConformanceFeatures(t *testing.T) {
 	found := false

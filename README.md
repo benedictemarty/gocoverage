@@ -54,7 +54,8 @@ Lecture élaguée par chunks (Window) pour les collections lazy. **Filtrage CQL2
 (Part 3) : `filter=t2m > 20 AND uwind < 5` (`filter-lang=cql2-text`), avec
 opérateurs avancés `IN`, `LIKE`, `BETWEEN`, `IS [NOT] NULL` et **spatiaux**
 `S_INTERSECTS`/`S_WITHIN`/`S_DISJOINT` (point dans polygone WKT) ; schéma des
-propriétés via `/collections/{id}/queryables`.
+propriétés via `/collections/{id}/queryables`. Tri par propriété via
+`sortby=-t2m` (extension STAC/Records, combinable avec `limit` pour du top-N).
 
 **Entrées** : `LoadNetCDF`, `LoadZarr`, `LoadChunkedZarr` (lecture élaguée par
 chunks), `LoadPyramidZarr` (aperçus multi-résolution), `LoadGrib` (GRIB2) +

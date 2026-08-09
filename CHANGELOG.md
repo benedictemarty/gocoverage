@@ -5,6 +5,23 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.36.0] - 2026-08-09
+
+### Ajouté — tri des entités sur /items (extension `sortby`)
+
+- **`/items?sortby=-t2m,uwind`** : tri des entités par une ou plusieurs
+  propriétés (préfixe `-` = descendant, `+`/aucun = ascendant). Combinable avec
+  `limit` pour des requêtes « top-N » (ex. les mailles les plus chaudes). Valeurs
+  nulles classées en dernier. Le tri est appliqué avant la pagination
+  (`offset`/`limit`) et cohérent d'une page à l'autre.
+- **Extension pragmatique** (syntaxe STAC / OGC API - Records) : documentée comme
+  telle, sans revendiquer de classe de conformité OGC Features non finalisée.
+- Garde-fou mémoire `maxItemsSort` (200 000 entités) : le tri interdit le parcours
+  en flux ; au-delà, 400 invitant à restreindre `bbox`/`filter`.
+- Sans `sortby`, le parcours reste **en flux** (comportement inchangé).
+- Tests : tri décroissant/croissant, top-N, cohérence de la pagination triée,
+  analyse des critères `sortby`.
+
 ## [0.35.0] - 2026-08-09
 
 ### Ajouté — filtrage spatial CQL2 (S_INTERSECTS, S_WITHIN…)

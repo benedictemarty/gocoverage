@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -36,8 +37,19 @@ type ItemsParams struct {
 	Z          *float64
 	Limit      int
 	Offset     int
-	Filter     cqlExpr // filtre CQL2 optionnel (nil = aucun)
+	Filter     cqlExpr   // filtre CQL2 optionnel (nil = aucun)
+	SortBy     []sortKey // tri optionnel (extension : syntaxe STAC/Records)
 }
+
+// sortKey décrit un critère de tri : propriété et sens (desc si Desc).
+type sortKey struct {
+	prop string
+	desc bool
+}
+
+// maxItemsSort borne le nombre d'entités triées en mémoire (le tri interdit le
+// parcours en flux ; garde-fou contre l'OOM sur une très grande emprise).
+const maxItemsSort = 200_000
 
 // gridSource fournit l'accès aux valeurs d'une région lue (élaguée par chunks ou
 // grille complète) et le lien vers les indices absolus de la grille pleine
@@ -212,8 +224,10 @@ func (c *Collection) Items(p ItemsParams) (features []map[string]interface{}, nu
 	if err != nil {
 		return nil, 0, err
 	}
+	sorted := len(p.SortBy) > 0
 	features = []map[string]interface{}{}
-	seen := 0 // entités non vides rencontrées (pour offset/limit)
+	var all []map[string]interface{} // collecté seulement pour le tri
+	seen := 0                        // entités non vides rencontrées (pour offset/limit)
 	for ly := 0; ly < len(src.ys); ly++ {
 		for lx := 0; lx < len(src.xs); lx++ {
 			if !inBBox(p.BBox, src.xs[lx], src.ys[ly]) {
@@ -230,13 +244,100 @@ func (c *Collection) Items(p ItemsParams) (features []map[string]interface{}, nu
 				}
 			}
 			numberMatched++
+			if sorted {
+				if len(all) >= maxItemsSort {
+					return nil, 0, fmt.Errorf("tri de plus de %d entités : restreignez bbox/filter", maxItemsSort)
+				}
+				all = append(all, f)
+				continue
+			}
+			// Sans tri : pagination en flux (ordre iy, ix).
 			if seen >= p.Offset && len(features) < p.Limit {
 				features = append(features, f)
 			}
 			seen++
 		}
 	}
+	if sorted {
+		sortFeatures(all, p.SortBy)
+		features = pageSlice(all, p.Offset, p.Limit)
+	}
 	return features, numberMatched, nil
+}
+
+// sortFeatures trie les entités selon les critères (stable, valeurs nulles en
+// dernier quel que soit le sens).
+func sortFeatures(all []map[string]interface{}, keys []sortKey) {
+	sort.SliceStable(all, func(i, j int) bool {
+		return featCompare(all[i], all[j], keys) < 0
+	})
+}
+
+// featCompare compare deux entités selon les critères de tri.
+func featCompare(a, b map[string]interface{}, keys []sortKey) int {
+	pa, _ := a["properties"].(map[string]interface{})
+	pb, _ := b["properties"].(map[string]interface{})
+	for _, k := range keys {
+		va, oka := propVal(pa, k.prop)
+		vb, okb := propVal(pb, k.prop)
+		switch {
+		case !oka && !okb:
+			continue // égalité sur ce critère (valeurs nulles)
+		case !oka:
+			return 1 // a nul → après b
+		case !okb:
+			return -1
+		}
+		cmp := compareVals(va, vb)
+		if k.desc {
+			cmp = -cmp
+		}
+		if cmp != 0 {
+			return cmp
+		}
+	}
+	return 0
+}
+
+// propVal renvoie la valeur non nulle d'une propriété, ou ok=false si absente/nulle.
+func propVal(p map[string]interface{}, name string) (interface{}, bool) {
+	if p == nil {
+		return nil, false
+	}
+	v, ok := p[name]
+	if !ok || v == nil {
+		return nil, false
+	}
+	return v, true
+}
+
+// compareVals compare deux valeurs de même nature (numérique ou chaîne).
+func compareVals(a, b interface{}) int {
+	if af, ok := a.(float64); ok {
+		if bf, ok := b.(float64); ok {
+			switch {
+			case af < bf:
+				return -1
+			case af > bf:
+				return 1
+			}
+			return 0
+		}
+	}
+	as, bs := fmt.Sprint(a), fmt.Sprint(b)
+	return strings.Compare(as, bs)
+}
+
+// pageSlice extrait la page [offset, offset+limit) d'une tranche.
+func pageSlice(all []map[string]interface{}, offset, limit int) []map[string]interface{} {
+	if offset >= len(all) {
+		return []map[string]interface{}{}
+	}
+	end := offset + limit
+	if end > len(all) {
+		end = len(all)
+	}
+	return all[offset:end]
 }
 
 // Item renvoie l'entité (Feature) d'identifiant fid = iy·nx + ix, ou une erreur
@@ -308,6 +409,7 @@ func (s *Server) items(w http.ResponseWriter, r *http.Request, c *Collection) {
 		writeErr(w, 400, err.Error())
 		return
 	}
+	p.SortBy = parseSortBy(q.Get("sortby"))
 
 	features, matched, err := c.Items(p)
 	if err != nil {
@@ -365,7 +467,7 @@ func (s *Server) itemByID(w http.ResponseWriter, r *http.Request, c *Collection,
 func itemsLinks(id string, q url.Values, p ItemsParams, matched int) []map[string]string {
 	base := "/collections/" + id + "/items"
 	keep := url.Values{}
-	for _, k := range []string{"bbox", "datetime", "properties", "z", "limit", "filter", "filter-lang"} {
+	for _, k := range []string{"bbox", "datetime", "properties", "z", "limit", "filter", "filter-lang", "sortby"} {
 		if v := q.Get(k); v != "" {
 			keep.Set(k, v)
 		}
@@ -398,6 +500,34 @@ func itemsLinks(id string, q url.Values, p ItemsParams, matched int) []map[strin
 		links = append(links, map[string]string{"rel": "prev", "href": href(prev), "type": "application/geo+json"})
 	}
 	return links
+}
+
+// parseSortBy analyse le paramètre sortby (liste séparée par des virgules ;
+// préfixe `-` = descendant, `+` ou aucun = ascendant). Ex. `sortby=-t2m,uwind`.
+func parseSortBy(s string) []sortKey {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	var keys []sortKey
+	for _, tok := range strings.Split(s, ",") {
+		tok = strings.TrimSpace(tok)
+		if tok == "" {
+			continue
+		}
+		k := sortKey{}
+		switch tok[0] {
+		case '-':
+			k.desc, tok = true, tok[1:]
+		case '+':
+			tok = tok[1:]
+		}
+		if tok = strings.TrimSpace(tok); tok != "" {
+			k.prop = tok
+			keys = append(keys, k)
+		}
+	}
+	return keys
 }
 
 // parseFilter analyse le paramètre filter selon filter-lang (défaut cql2-text).

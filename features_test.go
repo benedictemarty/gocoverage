@@ -222,3 +222,80 @@ func TestConformanceFeatures(t *testing.T) {
 		t.Fatal("classe de conformité Features core absente")
 	}
 }
+
+// TestItemsSortByDesc : sortby=-t2m ordonne les entités par t2m décroissant.
+func TestItemsSortByDesc(t *testing.T) {
+	srv := NewServer(demoProvider(t))
+	rec := doGET(t, srv, "/collections/demo/items?sortby=-t2m&limit=100")
+	if rec.Code != 200 {
+		t.Fatalf("code = %d (%s)", rec.Code, rec.Body.String())
+	}
+	var fc featureCollection
+	json.Unmarshal(rec.Body.Bytes(), &fc)
+	if fc.NumberReturned != 12 {
+		t.Fatalf("returned = %d, attendu 12", fc.NumberReturned)
+	}
+	if v, _ := fc.Features[0].Properties["t2m"].(float64); v != 23 {
+		t.Fatalf("première valeur = %v, attendu 23 (max)", v)
+	}
+	prev := 1e9
+	for _, f := range fc.Features {
+		v, _ := f.Properties["t2m"].(float64)
+		if v > prev {
+			t.Fatalf("tri décroissant rompu : %v après %v", v, prev)
+		}
+		prev = v
+	}
+}
+
+// TestItemsSortByAsc : sortby=t2m (asc) + limit → N plus petites valeurs.
+func TestItemsSortByAsc(t *testing.T) {
+	srv := NewServer(demoProvider(t))
+	rec := doGET(t, srv, "/collections/demo/items?sortby=t2m&limit=3")
+	var fc featureCollection
+	json.Unmarshal(rec.Body.Bytes(), &fc)
+	if fc.NumberMatched != 12 || fc.NumberReturned != 3 {
+		t.Fatalf("matched=%d returned=%d, attendu 12/3", fc.NumberMatched, fc.NumberReturned)
+	}
+	got := []float64{}
+	for _, f := range fc.Features {
+		v, _ := f.Properties["t2m"].(float64)
+		got = append(got, v)
+	}
+	if got[0] != 0 || got[1] != 1 || got[2] != 2 {
+		t.Fatalf("trois plus petites = %v, attendu [0 1 2]", got)
+	}
+}
+
+// TestItemsSortPagination : le tri est cohérent avec offset (page 2 suit page 1).
+func TestItemsSortPagination(t *testing.T) {
+	srv := NewServer(demoProvider(t))
+	var p1, p2 featureCollection
+	json.Unmarshal(doGET(t, srv, "/collections/demo/items?sortby=-t2m&limit=3&offset=0").Body.Bytes(), &p1)
+	json.Unmarshal(doGET(t, srv, "/collections/demo/items?sortby=-t2m&limit=3&offset=3").Body.Bytes(), &p2)
+	last1, _ := p1.Features[2].Properties["t2m"].(float64)
+	first2, _ := p2.Features[0].Properties["t2m"].(float64)
+	if first2 > last1 {
+		t.Fatalf("page 2 (%.0f) devrait suivre page 1 (%.0f)", first2, last1)
+	}
+}
+
+// TestParseSortBy : analyse des critères de tri.
+func TestParseSortBy(t *testing.T) {
+	keys := parseSortBy("-t2m, +uwind , name")
+	if len(keys) != 3 {
+		t.Fatalf("keys = %d, attendu 3", len(keys))
+	}
+	if !keys[0].desc || keys[0].prop != "t2m" {
+		t.Errorf("clé 0 = %+v", keys[0])
+	}
+	if keys[1].desc || keys[1].prop != "uwind" {
+		t.Errorf("clé 1 = %+v", keys[1])
+	}
+	if keys[2].prop != "name" {
+		t.Errorf("clé 2 = %+v", keys[2])
+	}
+	if parseSortBy("") != nil {
+		t.Error("sortby vide devrait donner nil")
+	}
+}

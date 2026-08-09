@@ -45,6 +45,11 @@ TileMatrixSets : `WorldCRS84Quad` (géographique) et `WebMercatorQuad` (Web
 Mercator, mapping latitude non linéaire — sans reprojection des données).
 Découverte via `/tileMatrixSets` et `/collections/{id}/map/tiles`.
 
+**OGC API - Features** (successeur de WFS) : `/items` expose les **mailles** de
+la grille en **Features Point GeoJSON** — `bbox`, `limit`, `offset`, `datetime`,
+`z`, `properties`, avec `numberMatched`/`numberReturned` et pagination
+`next`/`prev`. `/items/{featureId}` renvoie une maille (id = `iy·nx + ix`).
+
 **Entrées** : `LoadNetCDF`, `LoadZarr`, `LoadChunkedZarr` (lecture élaguée par
 chunks), `LoadPyramidZarr` (aperçus multi-résolution), `LoadGrib` (GRIB2) +
 `ConvertGribToZarr` / `cmd/grib2zarr`.
@@ -86,6 +91,7 @@ go install github.com/benedictemarty/gocoverage/cmd/gocoverage@latest
 | `GET /collections/{id}/map?bbox=…&width=…&height=…` | rendu **image** (OGC API - Maps, `f=png`/`jpeg`) |
 | `GET /collections/{id}/map/tiles/{tms}/{z}/{y}/{x}` | tuile carte (OGC API - Tiles) |
 | `GET /tileMatrixSets` / `…/{id}` | TileMatrixSets gérés (WorldCRS84Quad, WebMercatorQuad) |
+| `GET /collections/{id}/items` / `…/items/{fid}` | mailles en Features Point (OGC API - Features) |
 | `GET /collections/{id}/position?coords=x,y` | point le plus proche (EDR, PointSeries) |
 | `GET /collections/{id}/cube?bbox=…` | sous-cube (EDR) |
 | `GET /collections/{id}/area?coords=POLYGON((…))` | découpe par polygone (à trous) |

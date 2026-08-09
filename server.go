@@ -120,6 +120,8 @@ func (s *Server) dispatchAction(w http.ResponseWriter, r *http.Request, c *Colle
 		s.radius(w, r, c)
 	case "locations":
 		s.locations(w, r, c)
+	case "items":
+		s.items(w, r, c)
 	case "map":
 		s.mapRender(w, r, c)
 	case "instances":
@@ -132,6 +134,10 @@ func (s *Server) dispatchAction(w http.ResponseWriter, r *http.Request, c *Colle
 		}
 		if rest, ok := strings.CutPrefix(action, "map/tiles/"); ok {
 			s.mapTiles(w, r, c, rest)
+			return
+		}
+		if rest, ok := strings.CutPrefix(action, "items/"); ok {
+			s.itemByID(w, r, c, rest)
 			return
 		}
 		if rest, ok := strings.CutPrefix(action, "locations/"); ok {

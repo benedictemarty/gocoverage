@@ -1,0 +1,165 @@
+package gocoverage
+
+import (
+	"encoding/json"
+	"testing"
+)
+
+// featureCollection décode une réponse /items.
+type featureCollection struct {
+	Type           string `json:"type"`
+	NumberMatched  int    `json:"numberMatched"`
+	NumberReturned int    `json:"numberReturned"`
+	Features       []struct {
+		ID       int `json:"id"`
+		Geometry struct {
+			Type        string    `json:"type"`
+			Coordinates []float64 `json:"coordinates"`
+		} `json:"geometry"`
+		Properties map[string]interface{} `json:"properties"`
+	} `json:"features"`
+	Links []struct {
+		Rel  string `json:"rel"`
+		Href string `json:"href"`
+	} `json:"links"`
+}
+
+// TestItemsAll : /items énumère les mailles (démo = 3×4 = 12 cellules non vides).
+func TestItemsAll(t *testing.T) {
+	srv := NewServer(demoProvider(t))
+	rec := doGET(t, srv, "/collections/demo/items?limit=100")
+	if rec.Code != 200 {
+		t.Fatalf("code = %d (%s)", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/geo+json" {
+		t.Fatalf("content-type = %q", ct)
+	}
+	var fc featureCollection
+	if err := json.Unmarshal(rec.Body.Bytes(), &fc); err != nil {
+		t.Fatal(err)
+	}
+	if fc.Type != "FeatureCollection" {
+		t.Fatalf("type = %q", fc.Type)
+	}
+	if fc.NumberMatched != 12 || fc.NumberReturned != 12 {
+		t.Fatalf("matched=%d returned=%d, attendu 12/12", fc.NumberMatched, fc.NumberReturned)
+	}
+	// La première maille (iy=0, ix=0) : coin haut-gauche (lon 0, lat 45), t2m=0.
+	f0 := fc.Features[0]
+	if f0.ID != 0 || f0.Geometry.Coordinates[0] != 0 || f0.Geometry.Coordinates[1] != 45 {
+		t.Fatalf("feature 0 = id %d coords %v", f0.ID, f0.Geometry.Coordinates)
+	}
+}
+
+// TestItemsPagination : limit/offset paginent et exposent les liens next/prev.
+func TestItemsPagination(t *testing.T) {
+	srv := NewServer(demoProvider(t))
+	rec := doGET(t, srv, "/collections/demo/items?limit=5&offset=5")
+	var fc featureCollection
+	json.Unmarshal(rec.Body.Bytes(), &fc)
+	if fc.NumberMatched != 12 || fc.NumberReturned != 5 {
+		t.Fatalf("matched=%d returned=%d, attendu 12/5", fc.NumberMatched, fc.NumberReturned)
+	}
+	if fc.Features[0].ID != 5 {
+		t.Fatalf("première entité id = %d, attendu 5", fc.Features[0].ID)
+	}
+	hasNext, hasPrev := false, false
+	for _, l := range fc.Links {
+		if l.Rel == "next" {
+			hasNext = true
+		}
+		if l.Rel == "prev" {
+			hasPrev = true
+		}
+	}
+	if !hasNext || !hasPrev {
+		t.Fatalf("liens next=%v prev=%v, attendu les deux", hasNext, hasPrev)
+	}
+}
+
+// TestItemsBBox : le filtre bbox restreint les entités.
+func TestItemsBBox(t *testing.T) {
+	srv := NewServer(demoProvider(t))
+	// bbox lon [0,1], lat [44,45] → colonnes 0,1 × lignes 45,44 = 4 mailles.
+	rec := doGET(t, srv, "/collections/demo/items?bbox=0,44,1,45&limit=100")
+	var fc featureCollection
+	json.Unmarshal(rec.Body.Bytes(), &fc)
+	if fc.NumberMatched != 4 {
+		t.Fatalf("matched = %d, attendu 4", fc.NumberMatched)
+	}
+}
+
+// TestItemByID : /items/{fid} renvoie la maille attendue ; hors grille → 404.
+func TestItemByID(t *testing.T) {
+	srv := NewServer(demoProvider(t))
+	// fid = iy*nx+ix ; nx=4. Maille (iy=2, ix=1) → fid=9, lon=1, lat=43, t2m=21.
+	rec := doGET(t, srv, "/collections/demo/items/9")
+	if rec.Code != 200 {
+		t.Fatalf("code = %d (%s)", rec.Code, rec.Body.String())
+	}
+	var f struct {
+		ID       int `json:"id"`
+		Geometry struct {
+			Coordinates []float64 `json:"coordinates"`
+		} `json:"geometry"`
+		Properties map[string]interface{} `json:"properties"`
+	}
+	json.Unmarshal(rec.Body.Bytes(), &f)
+	if f.ID != 9 || f.Geometry.Coordinates[0] != 1 || f.Geometry.Coordinates[1] != 43 {
+		t.Fatalf("feature = id %d coords %v", f.ID, f.Geometry.Coordinates)
+	}
+	if v, _ := f.Properties["t2m"].(float64); v != 21 {
+		t.Fatalf("t2m = %v, attendu 21", f.Properties["t2m"])
+	}
+	if rec := doGET(t, srv, "/collections/demo/items/9999"); rec.Code != 404 {
+		t.Fatalf("hors grille : code = %d, attendu 404", rec.Code)
+	}
+	if rec := doGET(t, srv, "/collections/demo/items/abc"); rec.Code != 400 {
+		t.Fatalf("id non entier : code = %d, attendu 400", rec.Code)
+	}
+}
+
+// TestItemsProperties : properties sélectionne les variables exposées.
+func TestItemsProperties(t *testing.T) {
+	srv := NewServer(demoProvider(t))
+	rec := doGET(t, srv, "/collections/demo/items?properties=t2m&limit=1")
+	var fc featureCollection
+	json.Unmarshal(rec.Body.Bytes(), &fc)
+	if len(fc.Features) != 1 {
+		t.Fatalf("returned = %d", len(fc.Features))
+	}
+	props := fc.Features[0].Properties
+	if _, ok := props["t2m"]; !ok {
+		t.Fatal("t2m absent")
+	}
+	if _, ok := props["uwind"]; ok {
+		t.Fatal("uwind présent alors que non demandé")
+	}
+}
+
+// TestItemsBadParams : paramètres de pagination invalides → 400.
+func TestItemsBadParams(t *testing.T) {
+	srv := NewServer(demoProvider(t))
+	for _, p := range []string{
+		"/collections/demo/items?limit=0",
+		"/collections/demo/items?offset=-1",
+		"/collections/demo/items?bbox=1,2,3",
+	} {
+		if rec := doGET(t, srv, p); rec.Code != 400 {
+			t.Errorf("%s : code = %d, attendu 400", p, rec.Code)
+		}
+	}
+}
+
+// TestConformanceFeatures : la classe Features core est annoncée.
+func TestConformanceFeatures(t *testing.T) {
+	found := false
+	for _, cl := range conformanceClasses() {
+		if cl == "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/core" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("classe de conformité Features core absente")
+	}
+}

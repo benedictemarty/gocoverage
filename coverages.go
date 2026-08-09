@@ -55,6 +55,10 @@ func conformanceClasses() []string {
 		"http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/jpeg",
 		"http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/oas30",
 		"http://www.opengis.net/spec/ogcapi-tilematrixset-1/1.0/conf/tilematrixset",
+		// OGC API - Features (successeur de WFS) : mailles en Features Point.
+		"http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/core",
+		"http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/oas30",
+		"http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson",
 	}
 }
 
@@ -81,11 +85,13 @@ func (s *Server) openapi(w http.ResponseWriter, r *http.Request) {
 			"/collections/{collectionId}/coverage": path("Récupération de la couverture (bbox, subset, datetime, scale-*, f)"),
 			"/collections/{collectionId}/map":      path("Rendu image de la couverture (bbox, width, height, datetime, z, properties, colorscalerange, style, f=png|jpeg)"),
 			"/collections/{collectionId}/map/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}": path("Tuile carte (OGC API - Tiles)"),
-			"/tileMatrixSets": path("TileMatrixSets gérés (WorldCRS84Quad, WebMercatorQuad)"),
-			"/collections/{collectionId}/position": path("Requête EDR position"),
-			"/collections/{collectionId}/area":     path("Requête EDR area (polygone, trous)"),
-			"/collections/{collectionId}/cube":     path("Requête EDR cube"),
-			"/conformance":                         path("Classes de conformité"),
+			"/tileMatrixSets":                               path("TileMatrixSets gérés (WorldCRS84Quad, WebMercatorQuad)"),
+			"/collections/{collectionId}/items":             path("Entités (mailles) GeoJSON (OGC API - Features : bbox, limit, offset, datetime, properties)"),
+			"/collections/{collectionId}/items/{featureId}": path("Une entité (maille) par identifiant"),
+			"/collections/{collectionId}/position":          path("Requête EDR position"),
+			"/collections/{collectionId}/area":              path("Requête EDR area (polygone, trous)"),
+			"/collections/{collectionId}/cube":              path("Requête EDR cube"),
+			"/conformance":                                  path("Classes de conformité"),
 		},
 	}
 	writeJSON(w, 200, doc)

@@ -5,6 +5,28 @@ Toutes les modifications notables de gocoverage sont consignées dans ce fichier
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet suit un versionnement sémantique.
 
+## [0.30.0] - 2026-08-09
+
+### Ajouté — OGC API - Features (équivalent WFS)
+
+- **`/collections/{id}/items`** : les **mailles** de la grille (au premier pas
+  temps/niveau) exposées en **Features Point GeoJSON** (`application/geo+json`).
+  Paramètres : `bbox`, `limit` (défaut 10, max 10000), `offset`, `datetime`, `z`,
+  `properties=<variables>`. Réponse avec `numberMatched`, `numberReturned` et
+  liens `self`/`next`/`prev` (pagination conservant les filtres).
+- **`/collections/{id}/items/{featureId}`** : une entité par identifiant.
+  L'identifiant est l'indice plat de la maille en pleine résolution
+  (`fid = iy·nx + ix`), **stable** quel que soit le filtrage/pagination.
+- **`Items` / `Item` / `cellReader`** : lecture d'une maille (ix, iy) avec les
+  dimensions temps/niveau fixées au pas choisi ; mailles entièrement vides (NaN)
+  omises. Ordre d'axes de stockage quelconque géré via strides.
+- **Découverte** : lien `rel=items` dans la description de collection, chemins
+  `/items` et `/items/{featureId}` dans `/api`.
+- **Conformance** : classes `ogcapi-features-1` (core, oas30, geojson).
+- Tests : énumération complète, pagination `limit`/`offset` + liens next/prev,
+  filtre `bbox`, entité par identifiant (et 404/400), sélection `properties`,
+  paramètres invalides, annonce de conformité.
+
 ## [0.29.0] - 2026-08-09
 
 ### Ajouté — OGC API - Tiles (tuiles carte)
